@@ -2,5 +2,9 @@
   "name": "@gasboost/app",
   "devDependencies": {
     "@types/google-apps-script": "^2.0.12"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   }
 }

@@ -15,7 +15,7 @@ type RpcMap = Record<string, RpcHandler>;
 export class AppsScript<TFunctions extends RpcMap = {}> {
   private doGetHandler: DoGetHandler | null = null;
   private doPostHandler: DoPostHandler | null = null;
-  private functions: Record<string, Function> = {};
+  private functions: Record<string, RpcHandler> = {};
 
   public get(handler: DoGetHandler): this {
     this.doGetHandler = handler;
@@ -27,7 +27,7 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
     return this;
   }
 
-  public func<TName extends string, THandler extends RpcHandler>(
+  public call<TName extends string, THandler extends RpcHandler>(
     name: TName,
     handler: THandler,
   ): AppsScript<TFunctions & Record<TName, THandler>> {
@@ -44,26 +44,35 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
     if (!this.doGetHandler) {
       throw new Error("No GET handler registered.");
     }
-    const request = new AppsScriptHttpRequest(event);
-    return this.doGetHandler(request);
+
+    return this.doGetHandler(new AppsScriptHttpRequest(event));
   }
 
   public callPost(event: GoogleAppsScript.Events.DoPost) {
     if (!this.doPostHandler) {
       throw new Error("No POST handler registered.");
     }
-    const request = new AppsScriptPostRequest(event);
-    return this.doPostHandler(request);
+
+    return this.doPostHandler(new AppsScriptPostRequest(event));
   }
 
-  call(name: string, ...args: any[]): any {
+  public dispatch(name: string, ...args: unknown[]) {
     const handler = this.functions[name];
+
     if (!handler) {
       throw new Error(`Function ${name} is not registered.`);
     }
+
     return handler(...args);
   }
 }
 
 export type InferAppsScript<T> =
-  T extends AppsScript<infer TFunctions> ? TFunctions : never;
+  T extends AppsScript<infer TFunctions>
+    ? {
+        [K in keyof TFunctions]: {
+          args: Parameters<TFunctions[K]>;
+          result: Awaited<ReturnType<TFunctions[K]>>;
+        };
+      }
+    : never;
