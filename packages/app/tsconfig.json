@@ -4,6 +4,6 @@
     "rootDir": ".",
     "types": ["google-apps-script"]
   },
-  "include": ["src", "tests"],
-  "references": []
+  "include": ["src", "tests/**/*.spec.ts"],
+  "exclude": ["tests/consumer/.build"]
 }

@@ -1,0 +1,10 @@
+{
+  "name": "@test/backend",
+  "private": true,
+  "dependencies": {
+    "@gasboost/app": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/google-apps-script": "^2.0.12"
+  }
+}

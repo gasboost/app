@@ -1,0 +1,18 @@
+{
+  "extends": "../../../../../tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": ".",
+    "outDir": "../.build/frontend",
+    "types": []
+  },
+  "include": ["main.ts"],
+  "references": [
+    {
+      "path": "../backend"
+    }
+  ],
+  "exclude": ["../.build"]
+}

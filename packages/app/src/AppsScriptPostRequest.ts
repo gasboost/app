@@ -9,7 +9,7 @@ export class AppsScriptPostRequest extends AppsScriptHttpRequest {
     return this.postEvent.postData.contents;
   }
 
-  public json() {
-    return JSON.parse(this.postEvent.postData.contents);
+  public json<T = unknown>(): T {
+    return JSON.parse(this.postEvent.postData.contents) as T;
   }
 }

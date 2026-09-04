@@ -1,0 +1,13 @@
+{
+  "extends": "../../../../../tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": "../../..",
+    "outDir": "../.build/backend",
+    "types": ["google-apps-script"]
+  },
+  "include": ["main.ts", "../../../src/**/*.ts"],
+  "exclude": ["../.build", "../../../node_modules"]
+}
