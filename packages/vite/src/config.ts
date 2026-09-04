@@ -19,7 +19,7 @@ export function createGasboostConfig(options: GasboostOptions): UserConfig {
         input: entry,
 
         output: {
-          format: "iife",
+          format: "cjs",
           entryFileNames: path.basename(entry, path.extname(entry)) + ".js",
         },
       },
