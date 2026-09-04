@@ -6,20 +6,181 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
-  ci:
+  check:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm test
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck app
+        run: pnpm --filter @gasboost/app typecheck
+
+      - name: Test app
+        run: pnpm --filter @gasboost/app test
+
+      - name: Build app
+        run: pnpm --filter @gasboost/app build
+
+      - name: Typecheck vite
+        run: pnpm --filter @gasboost/vite typecheck
+
+      - name: Test vite
+        run: pnpm --filter @gasboost/vite test
+
+      - name: Build vite
+        run: pnpm --filter @gasboost/vite build
+
+      - name: Pack app
+        run: pnpm --filter @gasboost/app pack
+
+      - name: Pack vite
+        run: pnpm --filter @gasboost/vite pack
+
+      - name: Smoke test app package
+        run: |
+          APP_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-app-*.tgz' -print -quit)"
+
+          rm -rf /tmp/gasboost-app-consumer
+          mkdir -p /tmp/gasboost-app-consumer
+          cd /tmp/gasboost-app-consumer
+
+          pnpm init
+
+          pnpm add "$APP_PACKAGE"
+          pnpm add -D typescript @types/google-apps-script
+
+          cat > index.ts <<'EOF'
+          import {
+            AppsScript,
+            type InferAppsScript,
+          } from "@gasboost/app";
+
+          const app = new AppsScript()
+            .call(
+              "sum",
+              (a: number, b: number) => a + b,
+            );
+
+          type AppType =
+            InferAppsScript<typeof app>;
+
+          const args: AppType["sum"]["args"] =
+            [1, 2];
+
+          console.log(
+            typeof AppsScript,
+            args,
+          );
+          EOF
+
+          cat > tsconfig.json <<'EOF'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "module": "NodeNext",
+              "moduleResolution": "NodeNext",
+              "strict": true,
+              "types": ["google-apps-script"],
+              "skipLibCheck": true
+            },
+            "include": ["index.ts"]
+          }
+          EOF
+
+          pnpm exec tsc --noEmit
+          pnpm exec tsc
+          node index.js
+
+      - name: Smoke test vite package
+        run: |
+          APP_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-app-*.tgz' -print -quit)"
+          VITE_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-vite-*.tgz' -print -quit)"
+
+          rm -rf /tmp/gasboost-vite-consumer
+          mkdir -p /tmp/gasboost-vite-consumer/src
+          cd /tmp/gasboost-vite-consumer
+
+          pnpm init
+
+          pnpm add "$APP_PACKAGE"
+          pnpm add -D "$VITE_PACKAGE" vite typescript @types/google-apps-script
+
+          cat > package.json <<'EOF'
+          {
+            "type": "module",
+            "scripts": {
+              "build": "vite build"
+            }
+          }
+          EOF
+
+          cat > src/main.ts <<'EOF'
+          import { AppsScript } from "@gasboost/app";
+
+          const app = new AppsScript()
+            .get(() => {
+              return {
+                marker: "GET_RESULT",
+              } as never;
+            })
+            .call(
+              "sum",
+              (a: number, b: number) => a + b,
+            );
+
+          export default app;
+          EOF
+
+          cat > vite.config.ts <<'EOF'
+          import { defineConfig } from "vite";
+          import { gasboost } from "@gasboost/vite";
+
+          export default defineConfig({
+            plugins: [
+              gasboost({
+                entry: "src/main.ts",
+              }),
+            ],
+          });
+          EOF
+
+          cat > tsconfig.json <<'EOF'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "module": "NodeNext",
+              "moduleResolution": "NodeNext",
+              "strict": true,
+              "types": ["google-apps-script"],
+              "skipLibCheck": true
+            },
+            "include": [
+              "src",
+              "vite.config.ts"
+            ]
+          }
+          EOF
+
+          pnpm exec tsc --noEmit
+          pnpm build
+
+          test -f dist/main.js
+          grep -q "function doGet" dist/main.js
+          grep -q "function sum" dist/main.js
