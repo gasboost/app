@@ -31,12 +31,16 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "type": "module",
   "devDependencies": {
     "vite": "^8.2.2"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json"
+    "build": "rm -rf dist && vite build && tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "typescript": "^7.0.2"
   }
 }
