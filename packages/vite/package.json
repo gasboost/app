@@ -38,7 +38,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "build": "rm -rf dist && vite build && tsc -p tsconfig.build.json"
+    "build": "rm -rf dist && vite build --config vite.package.config.ts && tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "typescript": "^7.0.2"
