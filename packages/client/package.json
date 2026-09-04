@@ -1,3 +1,6 @@
 {
-  "name": "@gasboost/client"
+  "name": "@gasboost/client",
+  "scripts": {
+    "test": "vitest run"
+  }
 }
