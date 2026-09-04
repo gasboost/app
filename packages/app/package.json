@@ -31,7 +31,7 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "module": "commonjs",
+  "type": "commonjs",
   "devDependencies": {
     "@types/google-apps-script": "^2.0.12",
     "@types/node": "^26.4.1",
