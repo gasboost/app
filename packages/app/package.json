@@ -1,8 +1,37 @@
 {
   "name": "@gasboost/app",
-  "exports": {
-    ".": "./src/index.ts"
+  "version": "0.1.1",
+  "description": "A lightweight TypeScript runtime for building Google Apps Script applications with type-safe GET, POST, and RPC handlers.",
+  "keywords": [
+    "google-apps-script",
+    "gas",
+    "typescript",
+    "rpc",
+    "web-app",
+    "backend",
+    "serverless",
+    "framework",
+    "gasboost"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gasboost/app.git",
+    "directory": "packages/app"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "default": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "commonjs",
   "devDependencies": {
     "@types/google-apps-script": "^2.0.12",
     "@types/node": "^26.4.1",
@@ -10,6 +39,10 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -b tests/consumer &&  rm -rf tests/consumer/.build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

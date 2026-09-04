@@ -28,6 +28,10 @@ importers:
         version: 8.2.2(@types/node@26.4.1)
 
   packages/vite:
+    dependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
     devDependencies:
       vite:
         specifier: ^8.2.2
