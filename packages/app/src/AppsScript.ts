@@ -1,5 +1,6 @@
 import { AppsScriptHttpRequest } from "./AppsScriptHttpRequest";
 import { AppsScriptPostRequest } from "./AppsScriptPostRequest";
+import { AppsScriptResponse } from "./AppsScriptResponse";
 
 type DoGetHandler = (
   request: AppsScriptHttpRequest,
@@ -69,14 +70,15 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
     return this.doPostHandler(new AppsScriptPostRequest(event));
   }
 
-  public dispatch(name: string, ...args: unknown[]) {
+  public async dispatch(name: string, ...args: unknown[]) {
     const handler = this.functions[name];
 
     if (!handler) {
       throw new Error(`Function ${name} is not registered.`);
     }
 
-    return handler(...args);
+    const result = await handler(...args);
+    return new AppsScriptResponse(result);
   }
 }
 

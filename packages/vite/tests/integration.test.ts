@@ -56,7 +56,11 @@ describe("gasboost integration", () => {
 
     expect(output).toContain("getUser");
     expect(output).toContain("sum");
-    expect(context.sum(2, 3)).toBe(5);
+    const response = await context.sum(2, 3);
+
+    expect(response).toEqual({
+      contents: "5",
+    });
   });
 
   test("ES module importを最終bundleへ残さない", async () => {
