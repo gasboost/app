@@ -19,11 +19,21 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
 
   public get(handler: DoGetHandler): this {
     this.doGetHandler = handler;
+
+    (globalThis as Record<string, unknown>).doGet = (
+      event: GoogleAppsScript.Events.AppsScriptHttpRequestEvent,
+    ) => this.callGet(event);
+
     return this;
   }
 
   public post(handler: DoPostHandler): this {
     this.doPostHandler = handler;
+
+    (globalThis as Record<string, unknown>).doPost = (
+      event: GoogleAppsScript.Events.DoPost,
+    ) => this.callPost(event);
+
     return this;
   }
 
@@ -36,6 +46,9 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
     }
 
     this.functions[name] = handler;
+
+    (globalThis as Record<string, unknown>)[name] = (...args: unknown[]) =>
+      this.dispatch(name, ...args);
 
     return this as AppsScript<TFunctions & Record<TName, THandler>>;
   }
