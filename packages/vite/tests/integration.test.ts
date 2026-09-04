@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import vm from "node:vm";
 import { build } from "vite";
 import { describe, expect, test } from "vitest";
 import { gasboost } from "../src/gasboost";
@@ -45,10 +46,17 @@ describe("gasboost integration", () => {
 
   test("RPC global functionを最終bundleへ生成する", async () => {
     const output = await buildFixture(false);
+    const context = vm.createContext({
+      console,
+    });
+
+    vm.runInContext(output, context);
+
+    expect(typeof context.getUser).toBe("function");
 
     expect(output).toContain("getUser");
-
     expect(output).toContain("sum");
+    expect(context.sum(2, 3)).toBe(5);
   });
 
   test("ES module importを最終bundleへ残さない", async () => {

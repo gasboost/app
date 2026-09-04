@@ -28,7 +28,7 @@ export function gasboost(options: GasboostOptions): Plugin {
 
       for (const output of Object.values(bundle)) {
         if (output.type === "chunk" && output.isEntry) {
-          output.code += `\n${globalCode}`;
+          output.code = `${globalCode}\n\n${output.code}`;
         }
       }
     },

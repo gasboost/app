@@ -14,32 +14,19 @@ function ensureValidGlobalFunctionName(name: string): void {
 
 export function createGlobalCode(analysis: AppsScriptAnalysis): string {
   const declarations: string[] = [];
-  const app = analysis.appVariable;
 
   if (analysis.hasGet) {
-    declarations.push(`
-function doGet(event) {
-  return ${app}.callGet(event);
-}
-`);
+    declarations.push("function doGet() {}");
   }
 
   if (analysis.hasPost) {
-    declarations.push(`
-function doPost(event) {
-  return ${app}.callPost(event);
-}
-`);
+    declarations.push("function doPost() {}");
   }
 
   for (const name of analysis.calls) {
     ensureValidGlobalFunctionName(name);
 
-    declarations.push(`
-function ${name}(...args) {
-  return ${app}.dispatch("${name}", ...args);
-}
-`);
+    declarations.push(`function ${name}() {}`);
   }
 
   return declarations.join("\n");

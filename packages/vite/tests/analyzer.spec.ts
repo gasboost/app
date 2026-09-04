@@ -40,7 +40,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: true,
       hasPost: false,
       calls: [],
@@ -56,7 +55,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: false,
       hasPost: true,
       calls: [],
@@ -72,7 +70,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: ["getUser"],
@@ -90,7 +87,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: ["getUser", "saveUser", "deleteUser"],
@@ -109,7 +105,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: true,
       hasPost: true,
       calls: ["getUser", "saveUser"],
@@ -167,7 +162,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: ["getUser"],
@@ -191,7 +185,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: ["getUser"],
@@ -213,7 +206,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: true,
       hasPost: false,
       calls: ["real"],
@@ -232,7 +224,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: true,
       hasPost: true,
       calls: ["getUser"],
@@ -254,7 +245,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: ["real"],
@@ -273,7 +263,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: ["real"],
@@ -288,7 +277,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: [],
@@ -313,7 +301,6 @@ describe("analyzeAppsScript", () => {
         export default app;
       `),
     ).toEqual({
-      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: ["getUser"],
