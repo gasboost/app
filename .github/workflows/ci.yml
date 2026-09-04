@@ -47,11 +47,23 @@ jobs:
       - name: Build vite
         run: pnpm --filter @gasboost/vite build
 
+      - name: Typecheck client
+        run: pnpm --filter @gasboost/client typecheck
+
+      - name: Test client
+        run: pnpm --filter @gasboost/client test
+
+      - name: Build client
+        run: pnpm --filter @gasboost/client build
+
       - name: Pack app
         run: pnpm --filter @gasboost/app pack
 
       - name: Pack vite
         run: pnpm --filter @gasboost/vite pack
+
+      - name: Pack client
+        run: pnpm --filter @gasboost/client pack
 
       - name: Smoke test app package
         run: |
@@ -112,6 +124,7 @@ jobs:
         run: |
           APP_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-app-*.tgz' -print -quit)"
           VITE_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-vite-*.tgz' -print -quit)"
+          CLIENT_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-client-*.tgz' -print -quit)"
 
           rm -rf /tmp/gasboost-vite-consumer
           mkdir -p /tmp/gasboost-vite-consumer/src
@@ -120,6 +133,7 @@ jobs:
           pnpm init
 
           pnpm add "$APP_PACKAGE"
+          pnpm add "$CLIENT_PACKAGE"
           pnpm add -D "$VITE_PACKAGE" vite typescript @types/google-apps-script
 
           cat > package.json <<'EOF'
