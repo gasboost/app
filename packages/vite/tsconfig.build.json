@@ -6,8 +6,8 @@
     "declaration": true,
     "declarationMap": false,
     "sourceMap": false,
-    "module": "CommonJS",
-    "moduleResolution": "Node"
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
   },
   "include": ["src"],
   "exclude": ["tests", "dist"]
