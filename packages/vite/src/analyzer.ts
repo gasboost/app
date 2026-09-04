@@ -20,6 +20,7 @@ import { createVirtualFileSystem } from "typescript/unstable/fs";
 import { API } from "typescript/unstable/sync";
 
 export interface AppsScriptAnalysis {
+  appVariable: string;
   hasGet: boolean;
   hasPost: boolean;
   calls: string[];
@@ -51,6 +52,7 @@ export function analyzeAppsScript(entry: string): AppsScriptAnalysis {
   ensureDefaultExport(sourceFile, appVariable);
 
   const result: AppsScriptAnalysis = {
+    appVariable,
     hasGet: false,
     hasPost: false,
     calls: [],

@@ -14,11 +14,12 @@ function ensureValidGlobalFunctionName(name: string): void {
 
 export function createGlobalCode(analysis: AppsScriptAnalysis): string {
   const declarations: string[] = [];
+  const app = analysis.appVariable;
 
   if (analysis.hasGet) {
     declarations.push(`
 function doGet(event) {
-  return app.callGet(event);
+  return ${app}.callGet(event);
 }
 `);
   }
@@ -26,7 +27,7 @@ function doGet(event) {
   if (analysis.hasPost) {
     declarations.push(`
 function doPost(event) {
-  return app.callPost(event);
+  return ${app}.callPost(event);
 }
 `);
   }
@@ -36,7 +37,7 @@ function doPost(event) {
 
     declarations.push(`
 function ${name}(...args) {
-  return app.dispatch("${name}", ...args);
+  return ${app}.dispatch("${name}", ...args);
 }
 `);
   }

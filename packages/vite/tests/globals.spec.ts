@@ -4,6 +4,7 @@ import { createGlobalCode } from "../src/globals";
 describe("createGlobalCode", () => {
   test("doGetを生成できる", () => {
     const code = createGlobalCode({
+      appVariable: "app",
       hasGet: true,
       hasPost: false,
       calls: [],
@@ -16,6 +17,7 @@ describe("createGlobalCode", () => {
 
   test("doPostを生成できる", () => {
     const code = createGlobalCode({
+      appVariable: "app",
       hasGet: false,
       hasPost: true,
       calls: [],
@@ -28,6 +30,7 @@ describe("createGlobalCode", () => {
 
   test("RPC global functionを生成できる", () => {
     const code = createGlobalCode({
+      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: ["getUser"],
@@ -39,6 +42,7 @@ describe("createGlobalCode", () => {
 
   test("複数のRPC global functionを生成できる", () => {
     const code = createGlobalCode({
+      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: ["getUser", "saveUser"],
@@ -50,6 +54,7 @@ describe("createGlobalCode", () => {
 
   test("get未登録ならdoGetを生成しない", () => {
     const code = createGlobalCode({
+      appVariable: "app",
       hasGet: false,
       hasPost: true,
       calls: [],
@@ -60,6 +65,7 @@ describe("createGlobalCode", () => {
 
   test("post未登録ならdoPostを生成しない", () => {
     const code = createGlobalCode({
+      appVariable: "app",
       hasGet: true,
       hasPost: false,
       calls: [],
@@ -70,6 +76,7 @@ describe("createGlobalCode", () => {
 
   test("RPC未登録ならRPC functionを生成しない", () => {
     const code = createGlobalCode({
+      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: [],
@@ -80,6 +87,7 @@ describe("createGlobalCode", () => {
 
   test("RPC引数をdispatchへそのまま渡す", () => {
     const code = createGlobalCode({
+      appVariable: "app",
       hasGet: false,
       hasPost: false,
       calls: ["sum"],
@@ -92,6 +100,7 @@ describe("createGlobalCode", () => {
 
   test("生成コードがJavaScriptとして構文的に正しい", () => {
     const code = createGlobalCode({
+      appVariable: "app",
       hasGet: true,
       hasPost: true,
       calls: ["getUser", "saveUser"],
@@ -105,6 +114,7 @@ describe("createGlobalCode", () => {
   test("JavaScript識別子として不正なRPC名はエラー", () => {
     expect(() =>
       createGlobalCode({
+        appVariable: "app",
         hasGet: false,
         hasPost: false,
         calls: ["foo-bar"],
@@ -113,6 +123,7 @@ describe("createGlobalCode", () => {
 
     expect(() =>
       createGlobalCode({
+        appVariable: "app",
         hasGet: false,
         hasPost: false,
         calls: ["123foo"],
@@ -123,6 +134,7 @@ describe("createGlobalCode", () => {
   test("doGetというRPC名は予約名衝突としてエラー", () => {
     expect(() =>
       createGlobalCode({
+        appVariable: "app",
         hasGet: true,
         hasPost: false,
         calls: ["doGet"],
@@ -133,6 +145,7 @@ describe("createGlobalCode", () => {
   test("doPostというRPC名は予約名衝突としてエラー", () => {
     expect(() =>
       createGlobalCode({
+        appVariable: "app",
         hasGet: false,
         hasPost: true,
         calls: ["doPost"],

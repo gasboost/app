@@ -24,7 +24,13 @@ export function gasboost(options: GasboostOptions): Plugin {
     },
 
     generateBundle(_, bundle) {
-      createGlobalCode(analysis);
+      const globalCode = createGlobalCode(analysis);
+
+      for (const output of Object.values(bundle)) {
+        if (output.type === "chunk" && output.isEntry) {
+          output.code += `\n${globalCode}`;
+        }
+      }
     },
   };
 }
