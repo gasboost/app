@@ -1,0 +1,10 @@
+{
+  "name": "@gasboost/vite",
+  "devDependencies": {
+    "vite": "^8.2.2"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  }
+}
