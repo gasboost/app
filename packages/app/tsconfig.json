@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "types": ["google-apps-script"]
+  },
+  "include": ["src", "tests/**/*.spec.ts"],
+  "exclude": ["tests/consumer/.build"]
+}
