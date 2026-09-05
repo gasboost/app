@@ -122,7 +122,7 @@ jobs:
         run: pnpm --filter @gasboost/client test
 
       - name: Build client
-        if: ${{ needs.check-versions.outputs.publish-client == 'true' }}
+        if: needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true'
         run: pnpm --filter @gasboost/client build
 
       - name: Typecheck react
