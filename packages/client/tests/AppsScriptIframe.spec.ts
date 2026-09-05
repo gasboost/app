@@ -116,7 +116,8 @@ describe("AppsScriptIframe", () => {
       expect(entry.state).toEqual({
         selectedUserId: "123",
       });
-      expect(entry.location.hash.normalize()).toBe("#/users?page=2");
+
+      expect(entry.location.hash.normalize()).toBe("#/users");
       expect(entry.location.searchParams.get("page")).toBe("2");
     });
 
@@ -183,7 +184,9 @@ describe("AppsScriptIframe", () => {
       expect(entry.state).toEqual({
         page: 2,
       });
-      expect(entry.location.hash.normalize()).toBe("#/users?page=2");
+
+      expect(entry.location.hash.normalize()).toBe("#/users");
+      expect(entry.location.searchParams.get("page")).toBe("2");
     });
 
     it("複数回変更された場合は最新の状態を保持する", () => {

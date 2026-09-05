@@ -46,15 +46,18 @@ export class AppsScriptIframe {
   }
 
   private read() {
-    const hash = new HashProperty(window.location.hash);
+    const normalized = new HashProperty(window.location.hash)
+      .toString()
+      .replace(/^#/, "");
 
-    const normalized = hash.toString().replace(/^#/, "");
-
-    const [, query = ""] = normalized.split("?");
+    const [path = "/", query = ""] = normalized.split("?");
 
     return new NavigationEntry(
       history.state ?? {},
-      new NavigationLocation(hash, new URLSearchParams(query)),
+      new NavigationLocation(
+        new HashProperty(path),
+        new URLSearchParams(query),
+      ),
     );
   }
 }
