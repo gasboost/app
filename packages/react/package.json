@@ -1,5 +1,30 @@
 {
   "name": "@gasboost/react",
+  "version": "0.1.0",
+  "description": "React integration for Google Apps Script web applications.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gasboost/app.git",
+    "directory": "packages/react"
+  },
+  "license": "MIT",
+  "author": "tiger-oshima",
+  "keywords": [
+    "google-apps-script",
+    "gas",
+    "react",
+    "router",
+    "web-app",
+    "gasboost"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "dependencies": {
     "@gasboost/client": "workspace:*"
   },
@@ -13,6 +38,6 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --config vitest.config.mts",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.build.json"
   }
 }

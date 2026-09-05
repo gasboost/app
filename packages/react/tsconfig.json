@@ -3,14 +3,5 @@
   "compilerOptions": {
     "jsx": "react-jsx"
   },
-  "include": [
-    "src",
-    "tests",
-    "../client/src/navigation/AppsScriptContainer.ts",
-    "../client/src/navigation/AppsScriptHistoryPipeline.ts",
-    "../client/src/navigation/AppsScriptIframe.ts",
-    "../client/src/navigation/NavigationLocation.ts",
-    "../client/src/navigation/NavigationEntry.ts",
-    "../client/src/navigation/HashProperty.ts"
-  ]
+  "include": ["src", "tests"]
 }
