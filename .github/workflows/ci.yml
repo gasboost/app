@@ -56,6 +56,15 @@ jobs:
       - name: Build client
         run: pnpm --filter @gasboost/client build
 
+      - name: Typecheck react
+        run: pnpm --filter @gasboost/react typecheck
+
+      - name: Test react
+        run: pnpm --filter @gasboost/react test
+
+      - name: Build react
+        run: pnpm --filter @gasboost/react build
+
       - name: Pack app
         run: pnpm --filter @gasboost/app pack
 
@@ -64,6 +73,9 @@ jobs:
 
       - name: Pack client
         run: pnpm --filter @gasboost/client pack
+
+      - name: Pack react
+        run: pnpm --filter @gasboost/react pack
 
       - name: Smoke test app package
         run: |
@@ -272,6 +284,107 @@ jobs:
           EOF
 
           pnpm exec tsc
+          pnpm build
+
+          test -f dist/index.html
+
+      - name: Smoke test react package
+        run: |
+          CLIENT_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-client-*.tgz' -print -quit)"
+          REACT_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-react-*.tgz' -print -quit)"
+
+          rm -rf /tmp/gasboost-react-consumer
+          mkdir -p /tmp/gasboost-react-consumer/src
+          cd /tmp/gasboost-react-consumer
+
+          pnpm init
+
+          pnpm add \
+          "$CLIENT_PACKAGE" \
+          "$REACT_PACKAGE" \
+          react \
+          react-dom \
+          react-router-dom
+
+          pnpm add -D \
+          typescript \
+          vite \
+          @vitejs/plugin-react \
+          @types/react \
+          @types/react-dom
+
+          cat > package.json <<'EOF'
+          {
+          "type": "module",
+          "scripts": {
+              "build": "vite build"
+          }
+          }
+          EOF
+
+          cat > src/main.tsx <<'EOF'
+          import type { AppsScriptJobStore } from "@gasboost/client";
+          import {
+          AppsScriptRouter,
+          useAppsScriptJob,
+          } from "@gasboost/react";
+          import { HashRouter } from "react-router-dom";
+
+          function Job({
+          store,
+          }: {
+          store: AppsScriptJobStore;
+          }) {
+          const job = useAppsScriptJob(store);
+
+          return <div>{String(job)}</div>;
+          }
+
+          export function App() {
+          return (
+              <AppsScriptRouter>
+              <HashRouter>
+                  <div>app</div>
+              </HashRouter>
+              </AppsScriptRouter>
+          );
+          }
+
+          void Job;
+          EOF
+
+          cat > index.html <<'EOF'
+          <div id="root"></div>
+          <script type="module" src="/src/main.tsx"></script>
+          EOF
+
+          cat > vite.config.ts <<'EOF'
+          import { defineConfig } from "vite";
+          import react from "@vitejs/plugin-react";
+
+          export default defineConfig({
+          plugins: [react()],
+          });
+          EOF
+
+          cat > tsconfig.json <<'EOF'
+          {
+          "compilerOptions": {
+              "target": "ES2022",
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "jsx": "react-jsx",
+              "strict": true,
+              "skipLibCheck": true
+          },
+          "include": [
+              "src",
+              "vite.config.ts"
+          ]
+          }
+          EOF
+
+          pnpm exec tsc --noEmit
           pnpm build
 
           test -f dist/index.html
