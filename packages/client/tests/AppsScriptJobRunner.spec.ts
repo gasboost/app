@@ -221,7 +221,7 @@ describe("AppsScriptJobRunner", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
-  it("pending JobをremoveするとQueueからも削除され実行されない", async () => {
+  it("pending JobをcancelするとQueueからも削除され実行されない", async () => {
     const queue = new AppsScriptJobQueue();
     const runner = new AppsScriptJobRunner(queue);
 
@@ -248,7 +248,7 @@ describe("AppsScriptJobRunner", () => {
     expect(pendingJob).toBeDefined();
     expect(pendingJob?.status).toBe("pending");
 
-    runner.remove(pendingJob!.id);
+    runner.cancel(pendingJob!.id);
 
     await expect(pendingPromise).rejects.toBeInstanceOf(
       AppsScriptJobCancelledError,
@@ -265,6 +265,92 @@ describe("AppsScriptJobRunner", () => {
     await Promise.resolve();
 
     expect(pendingExecute).not.toHaveBeenCalled();
+
+    for (const control of controls.slice(1)) {
+      control.resolve();
+    }
+
+    await Promise.all(runningPromises);
+  });
+
+  it("running JobをcancelしてもRunnerから削除されない", async () => {
+    const queue = new AppsScriptJobQueue();
+    const runner = new AppsScriptJobRunner(queue);
+
+    const control = deferred<void>();
+
+    const promise = queue.enqueue("running", async () => {
+      await control.promise;
+    });
+
+    await vi.waitFor(() => {
+      expect(runner.getJobs()).toHaveLength(1);
+      expect(runner.getJobs()[0]?.isRunning()).toBe(true);
+    });
+
+    const runningJob = runner.getJobs()[0];
+
+    runner.cancel(runningJob!.id);
+
+    expect(runner.getJobs()).toContain(runningJob);
+    expect(runningJob?.isRunning()).toBe(true);
+
+    control.resolve();
+    await promise;
+  });
+
+  it("running Jobをcancelしても同時実行数を超えない", async () => {
+    const queue = new AppsScriptJobQueue();
+    const runner = new AppsScriptJobRunner(queue);
+
+    const controls = Array.from({ length: 30 }, () => deferred<void>());
+
+    const runningPromises = controls.map((control, index) =>
+      queue.enqueue(`running-${index}`, async () => {
+        await control.promise;
+      }),
+    );
+
+    const pendingExecute = vi.fn(async () => "pending");
+
+    const pendingPromise = queue.enqueue("pending", pendingExecute);
+
+    await vi.waitFor(() => {
+      expect(runner.getJobs().filter((job) => job.isRunning())).toHaveLength(
+        30,
+      );
+    });
+
+    const runningJob = runner
+      .getJobs()
+      .find((job) => job.label === "running-0");
+
+    expect(runningJob).toBeDefined();
+
+    runner.cancel(runningJob!.id);
+
+    // running中なのでcancelされず、Runnerにも残る
+    expect(
+      runner.getJobs().find((job) => job.id === runningJob!.id),
+    ).toBeDefined();
+
+    expect(runningJob!.isRunning()).toBe(true);
+
+    // 枠は空いていないのでpendingは開始されない
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(pendingExecute).not.toHaveBeenCalled();
+
+    // 1件が本当に完了した時点で初めて枠が空く
+    controls[0].resolve();
+    await runningPromises[0];
+
+    await vi.waitFor(() => {
+      expect(pendingExecute).toHaveBeenCalledOnce();
+    });
+
+    await expect(pendingPromise).resolves.toBe("pending");
 
     for (const control of controls.slice(1)) {
       control.resolve();

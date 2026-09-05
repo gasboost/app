@@ -64,13 +64,27 @@ export class AppsScriptJobRunner implements RunnableJob {
     this.running = false;
   }
 
-  public remove(jobId: AppsScriptJob<any>["id"]) {
-    this.queue.remove(jobId);
+  public remove(jobId: string) {
     const index = this.jobs.findIndex((job) => job.id === jobId);
-    if (index !== -1) {
-      this.jobs.splice(index, 1);
-      this.notify();
+
+    if (index === -1) {
+      return;
     }
+
+    this.jobs.splice(index, 1);
+    this.notify();
+  }
+
+  public cancel(jobId: string) {
+    const job = this.jobs.find((job) => job.id === jobId);
+
+    if (!job || !job.cancel()) {
+      return;
+    }
+
+    this.queue.remove(jobId);
+    this.jobs.splice(this.jobs.indexOf(job), 1);
+    this.notify();
   }
 
   public retry(jobId: AppsScriptJob<any>["id"]) {

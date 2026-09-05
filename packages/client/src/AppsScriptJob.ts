@@ -65,9 +65,15 @@ export class AppsScriptJob<T> {
     return "unknown";
   }
 
-  public cancel() {
+  public cancel(): boolean {
+    if (!this.isPending()) {
+      return false;
+    }
+
     const error = new AppsScriptJobCancelledError();
     this.fail(error);
+
+    return true;
   }
 }
 

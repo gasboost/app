@@ -71,7 +71,7 @@ export function appsScriptClient<TApp extends RpcApp>(): {
 
   const jobs = {
     start: jobQueue.enqueue.bind(jobQueue),
-    cancel: jobRunner.remove.bind(jobRunner),
+    cancel: jobRunner.cancel.bind(jobRunner),
     retry: jobRunner.retry.bind(jobRunner),
     subscribe: jobStore.subscribe.bind(jobStore),
     getSnapshot: jobStore.getSnapshot.bind(jobStore),
