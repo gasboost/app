@@ -124,7 +124,6 @@ jobs:
         run: |
           APP_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-app-*.tgz' -print -quit)"
           VITE_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-vite-*.tgz' -print -quit)"
-          CLIENT_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-client-*.tgz' -print -quit)"
 
           rm -rf /tmp/gasboost-vite-consumer
           mkdir -p /tmp/gasboost-vite-consumer/src
@@ -133,7 +132,6 @@ jobs:
           pnpm init
 
           pnpm add "$APP_PACKAGE"
-          pnpm add "$CLIENT_PACKAGE"
           pnpm add -D "$VITE_PACKAGE" vite typescript @types/google-apps-script
 
           cat > package.json <<'EOF'
@@ -198,3 +196,49 @@ jobs:
           test -f dist/main.js
           grep -q "function doGet" dist/main.js
           grep -q "function sum" dist/main.js
+      - name: Smoke test client package
+        run: |
+          CLIENT_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-client-*.tgz' -print -quit)"
+
+          rm -rf /tmp/gasboost-client-consumer
+          mkdir -p /tmp/gasboost-client-consumer
+          cd /tmp/gasboost-client-consumer
+
+          pnpm init
+
+          pnpm add "$CLIENT_PACKAGE"
+
+          cat > src/main.ts <<'EOF'
+            import {
+            AppsScript,
+            type InferAppsScript,
+            } from "@gasboost/app";
+            import { appsScriptClient } from "@gasboost/client";
+
+            const app = new AppsScript()
+            .get(() => {
+                return {
+                marker: "GET_RESULT",
+                } as never;
+            })
+            .call(
+                "sum",
+                (a: number, b: number) => a + b,
+            );
+
+            type AppType = InferAppsScript<typeof app>;
+
+            const { client } = appsScriptClient<AppType>();
+
+            if (false) {
+            const result: Promise<number> =
+                client.sum(1, 2);
+
+            void result;
+            }
+
+            export default app;
+            EOF
+
+          pnpm exec tsc --noEmit
+          node src/main.js
