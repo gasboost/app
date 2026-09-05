@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AppsScriptJobCancelledError } from "../src/AppsScriptJob";
+import { AppsScriptJobCancelledError } from "../src/job/AppsScriptJob";
 
 type SuccessHandler = (result: unknown) => void;
 type FailureHandler = (error: Error) => void;

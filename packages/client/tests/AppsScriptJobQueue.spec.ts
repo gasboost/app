@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { AppsScriptJob } from "../src/AppsScriptJob";
+import { AppsScriptJob } from "../src/job/AppsScriptJob";
 import {
   AppsScriptJobQueue,
   type RunnableJob,
-} from "../src/AppsScriptJobQueue";
+} from "../src/job/AppsScriptJobQueue";
 
 describe("AppsScriptJobQueue", () => {
   it("enqueueするとlistenerにJobを通知してrunする", () => {
