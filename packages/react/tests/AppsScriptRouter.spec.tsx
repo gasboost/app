@@ -1,18 +1,13 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  AppsScriptContainer,
-  AppsScriptHistoryPipeline,
-  AppsScriptIframe,
-} from "@gasboost/client";
+import { AppsScriptHistoryPipeline } from "@gasboost/client";
 import { AppsScriptRouter } from "../src/AppsScriptRouter";
+
 vi.mock("@gasboost/client", () => ({
-  AppsScriptContainer: {
-    load: vi.fn(),
+  AppsScriptHistoryPipeline: {
+    create: vi.fn(),
   },
-  AppsScriptIframe: vi.fn(),
-  AppsScriptHistoryPipeline: vi.fn(),
 }));
 
 describe("AppsScriptRouter", () => {
@@ -21,8 +16,8 @@ describe("AppsScriptRouter", () => {
     cleanup();
   });
 
-  it("コンテナの読み込みが完了するまでは children を描画しない", () => {
-    vi.mocked(AppsScriptContainer.load).mockImplementation(() => {});
+  it("pipeline の生成が完了するまでは children を描画しない", () => {
+    vi.mocked(AppsScriptHistoryPipeline.create).mockImplementation(() => {});
 
     render(
       <AppsScriptRouter>
@@ -33,25 +28,18 @@ describe("AppsScriptRouter", () => {
     expect(screen.queryByText("app")).toBeNull();
   });
 
-  it("コンテナ読み込み後に iframe と pipeline を生成して同期を開始する", async () => {
-    const container = {} as AppsScriptContainer;
-    const iframe = {} as AppsScriptIframe;
-    const dispose = vi.fn();
-    const sync = vi.fn(() => dispose);
+  it("pipeline 生成後に同期を開始する", async () => {
+    const sync = vi.fn(() => vi.fn());
 
-    vi.mocked(AppsScriptIframe).mockImplementation(function () {
-      return iframe;
-    });
+    const pipeline = {
+      sync,
+    } as unknown as AppsScriptHistoryPipeline;
 
-    vi.mocked(AppsScriptHistoryPipeline).mockImplementation(function () {
-      return {
-        sync,
-      } as unknown as AppsScriptHistoryPipeline;
-    });
-
-    vi.mocked(AppsScriptContainer.load).mockImplementation((callback) => {
-      callback(container);
-    });
+    vi.mocked(AppsScriptHistoryPipeline.create).mockImplementation(
+      (callback) => {
+        callback(pipeline);
+      },
+    );
 
     render(
       <AppsScriptRouter>
@@ -63,24 +51,19 @@ describe("AppsScriptRouter", () => {
       expect(sync).toHaveBeenCalledOnce();
     });
 
-    expect(AppsScriptIframe).toHaveBeenCalledOnce();
-    expect(AppsScriptHistoryPipeline).toHaveBeenCalledWith(container, iframe);
+    expect(AppsScriptHistoryPipeline.create).toHaveBeenCalledOnce();
   });
 
   it("同期開始後に children を描画する", async () => {
-    vi.mocked(AppsScriptIframe).mockImplementation(function () {
-      return {} as AppsScriptIframe;
-    });
+    const pipeline = {
+      sync: vi.fn(() => vi.fn()),
+    } as unknown as AppsScriptHistoryPipeline;
 
-    vi.mocked(AppsScriptHistoryPipeline).mockImplementation(function () {
-      return {
-        sync: vi.fn(() => vi.fn()),
-      } as unknown as AppsScriptHistoryPipeline;
-    });
-
-    vi.mocked(AppsScriptContainer.load).mockImplementation((callback) => {
-      callback({} as AppsScriptContainer);
-    });
+    vi.mocked(AppsScriptHistoryPipeline.create).mockImplementation(
+      (callback) => {
+        callback(pipeline);
+      },
+    );
 
     render(
       <AppsScriptRouter>
@@ -93,21 +76,16 @@ describe("AppsScriptRouter", () => {
 
   it("アンマウント時に pipeline の監視を解除する", async () => {
     const dispose = vi.fn();
-    const sync = vi.fn(() => dispose);
 
-    vi.mocked(AppsScriptIframe).mockImplementation(function () {
-      return {} as AppsScriptIframe;
-    });
+    const pipeline = {
+      sync: vi.fn(() => dispose),
+    } as unknown as AppsScriptHistoryPipeline;
 
-    vi.mocked(AppsScriptHistoryPipeline).mockImplementation(function () {
-      return {
-        sync,
-      } as unknown as AppsScriptHistoryPipeline;
-    });
-
-    vi.mocked(AppsScriptContainer.load).mockImplementation((callback) => {
-      callback({} as AppsScriptContainer);
-    });
+    vi.mocked(AppsScriptHistoryPipeline.create).mockImplementation(
+      (callback) => {
+        callback(pipeline);
+      },
+    );
 
     const { unmount } = render(
       <AppsScriptRouter>
@@ -116,7 +94,7 @@ describe("AppsScriptRouter", () => {
     );
 
     await waitFor(() => {
-      expect(sync).toHaveBeenCalledOnce();
+      expect(pipeline.sync).toHaveBeenCalledOnce();
     });
 
     unmount();

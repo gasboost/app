@@ -7,6 +7,14 @@ export class AppsScriptHistoryPipeline {
     private readonly iframe: AppsScriptIframe,
   ) {}
 
+  static create(callback: (pipeline: AppsScriptHistoryPipeline) => void) {
+    AppsScriptContainer.load((container) => {
+      callback(
+        new AppsScriptHistoryPipeline(container, new AppsScriptIframe()),
+      );
+    });
+  }
+
   sync() {
     this.iframe.sync(this.container.current());
 
