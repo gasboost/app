@@ -1,8 +1,8 @@
-import { AppsScriptJob } from "./AppsScriptJob";
-import { AppsScriptJobQueue } from "./AppsScriptJobQueue";
-import { AppsScriptJobRunner } from "./AppsScriptJobRunner";
-import { appsScriptJobStore } from "./AppsScriptJobStore";
 import { google } from "./google";
+import { AppsScriptJob } from "./job/AppsScriptJob";
+import { AppsScriptJobQueue } from "./job/AppsScriptJobQueue";
+import { AppsScriptJobRunner } from "./job/AppsScriptJobRunner";
+import { appsScriptJobStore } from "./job/AppsScriptJobStore";
 
 type RpcResponse = {
   contents: string;
