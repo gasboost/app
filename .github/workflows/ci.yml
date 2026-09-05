@@ -299,8 +299,9 @@ jobs:
 
           pnpm init
 
+          pnpm add "$CLIENT_PACKAGE"
+
           pnpm add \
-          "$CLIENT_PACKAGE" \
           "$REACT_PACKAGE" \
           react \
           react-dom \
