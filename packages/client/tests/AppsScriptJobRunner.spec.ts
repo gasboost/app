@@ -219,4 +219,56 @@ describe("AppsScriptJobRunner", () => {
 
     expect(listener).not.toHaveBeenCalled();
   });
+
+  it("pending JobをremoveするとQueueからも削除され実行されない", async () => {
+    const queue = new AppsScriptJobQueue();
+    const runner = new AppsScriptJobRunner(queue);
+
+    const controls = Array.from({ length: 30 }, () => deferred<void>());
+
+    const runningPromises = controls.map((control, index) =>
+      queue.enqueue(`running-${index}`, async () => {
+        await control.promise;
+      }),
+    );
+
+    const pendingExecute = vi.fn(async () => "pending");
+
+    void queue.enqueue("pending", pendingExecute);
+
+    await vi.waitFor(() => {
+      expect(runner.getJobs().filter((job) => job.isRunning())).toHaveLength(
+        30,
+      );
+    });
+
+    const pendingJob = runner.getJobs().find((job) => job.label === "pending");
+
+    expect(pendingJob).toBeDefined();
+    expect(pendingJob?.status).toBe("pending");
+
+    runner.remove(pendingJob!.id);
+
+    expect(
+      runner.getJobs().find((job) => job.id === pendingJob!.id),
+    ).toBeUndefined();
+
+    // 1枠空ける
+    controls[0].resolve();
+
+    await runningPromises[0];
+
+    // pending JobがQueueに残っていたらここで実行されてしまう
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(pendingExecute).not.toHaveBeenCalled();
+
+    // 残りを終了
+    for (const control of controls.slice(1)) {
+      control.resolve();
+    }
+
+    await Promise.all(runningPromises);
+  });
 });

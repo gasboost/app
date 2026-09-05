@@ -63,6 +63,22 @@ type TestApp = {
   };
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return {
+    promise,
+    resolve,
+    reject,
+  };
+}
+
 describe("appsScriptTransport", () => {
   beforeEach(() => {
     serverFunctions = {};
@@ -248,5 +264,56 @@ describe("appsScriptClient", () => {
     expect(
       (client as unknown as Record<PropertyKey, unknown>)[Symbol.toStringTag],
     ).toBeUndefined();
+  });
+
+  it("jobs.cancelでpending Jobをキャンセルすると後から実行されない", async () => {
+    const { jobs } = appsScriptClient<TestApp>();
+
+    const controls = Array.from({ length: 30 }, () => deferred<void>());
+
+    const runningPromises = controls.map((control, index) =>
+      jobs.start(`running-${index}`, async () => {
+        await control.promise;
+      }),
+    );
+
+    const pendingExecute = vi.fn(async () => "pending");
+
+    void jobs.start("pending", pendingExecute);
+
+    await vi.waitFor(() => {
+      expect(jobs.getSnapshot().filter((job) => job.isRunning())).toHaveLength(
+        30,
+      );
+    });
+
+    const pendingJob = jobs
+      .getSnapshot()
+      .find((job) => job.label === "pending");
+
+    expect(pendingJob).toBeDefined();
+    expect(pendingJob?.status).toBe("pending");
+
+    jobs.cancel(pendingJob!.id);
+
+    expect(
+      jobs.getSnapshot().find((job) => job.id === pendingJob!.id),
+    ).toBeUndefined();
+
+    // 1枠空ける
+    controls[0].resolve();
+    await runningPromises[0];
+
+    // Queueに残っていたらここでpendingが実行される
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(pendingExecute).not.toHaveBeenCalled();
+
+    for (const control of controls.slice(1)) {
+      control.resolve();
+    }
+
+    await Promise.all(runningPromises);
   });
 });

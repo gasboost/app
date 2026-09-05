@@ -65,6 +65,7 @@ export class AppsScriptJobRunner implements RunnableJob {
   }
 
   public remove(jobId: AppsScriptJob<any>["id"]) {
+    this.queue.remove(jobId);
     const index = this.jobs.findIndex((job) => job.id === jobId);
     if (index !== -1) {
       this.jobs.splice(index, 1);

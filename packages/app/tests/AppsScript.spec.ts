@@ -99,3 +99,35 @@ test("POST eventのtextとjsonを取得できる", () => {
 
   expect(app.callPost(event)).toBe(output);
 });
+
+test("InferAppsScriptでDateがstringに変換される", () => {
+  const app = new AppsScript().call("getUser", () => ({
+    id: "1",
+    createdAt: new Date(),
+  }));
+
+  type App = InferAppsScript<typeof app>;
+
+  expectTypeOf<App["getUser"]["result"]>().toEqualTypeOf<{
+    id: string;
+    createdAt: string;
+  }>();
+});
+
+test("InferAppsScriptでネストしたDateもstringに変換される", () => {
+  const app = new AppsScript().call("getUsers", () => ({
+    users: [
+      {
+        createdAt: new Date(),
+      },
+    ],
+  }));
+
+  type App = InferAppsScript<typeof app>;
+
+  expectTypeOf<App["getUsers"]["result"]>().toEqualTypeOf<{
+    users: {
+      createdAt: string;
+    }[];
+  }>();
+});

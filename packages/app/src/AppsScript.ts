@@ -82,12 +82,20 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
   }
 }
 
+type JsonParsed<T> = T extends Date
+  ? string
+  : T extends readonly (infer U)[]
+    ? JsonParsed<U>[]
+    : T extends object
+      ? { [K in keyof T]: JsonParsed<T[K]> }
+      : T;
+
 export type InferAppsScript<T> =
   T extends AppsScript<infer TFunctions>
     ? {
         [K in keyof TFunctions]: {
           args: Parameters<TFunctions[K]>;
-          result: Awaited<ReturnType<TFunctions[K]>>;
+          result: JsonParsed<Awaited<ReturnType<TFunctions[K]>>>;
         };
       }
     : never;

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { AppsScriptJob } from "../src/AppsScriptJob";
 import {
   AppsScriptJobQueue,
   type RunnableJob,
@@ -82,5 +83,40 @@ describe("AppsScriptJobQueue", () => {
 
     expect(listener.addJob).not.toHaveBeenCalled();
     expect(listener.run).not.toHaveBeenCalled();
+  });
+
+  it("removeすると指定したJobをQueueから削除する", () => {
+    const queue = new AppsScriptJobQueue();
+
+    const jobs: AppsScriptJob<any>[] = [];
+
+    queue.subscribe({
+      addJob(job) {
+        jobs.push(job);
+      },
+      run: vi.fn(async () => {}),
+    });
+
+    void queue.enqueue("first", async () => 1);
+    void queue.enqueue("second", async () => 2);
+    void queue.enqueue("third", async () => 3);
+
+    queue.remove(jobs[1].id);
+
+    expect(queue.dequeue()?.label).toBe("first");
+    expect(queue.dequeue()?.label).toBe("third");
+    expect(queue.dequeue()).toBeUndefined();
+  });
+
+  it("存在しないJobをremoveしてもQueueを変更しない", () => {
+    const queue = new AppsScriptJobQueue();
+
+    void queue.enqueue("first", async () => 1);
+    void queue.enqueue("second", async () => 2);
+
+    queue.remove("missing");
+
+    expect(queue.dequeue()?.label).toBe("first");
+    expect(queue.dequeue()?.label).toBe("second");
   });
 });
