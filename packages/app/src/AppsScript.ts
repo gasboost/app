@@ -1,5 +1,6 @@
 import { AppsScriptHttpRequest } from "./AppsScriptHttpRequest";
 import { AppsScriptPostRequest } from "./AppsScriptPostRequest";
+import { AppsScriptResponse } from "./AppsScriptResponse";
 
 type DoGetHandler = (
   request: AppsScriptHttpRequest,
@@ -69,23 +70,32 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
     return this.doPostHandler(new AppsScriptPostRequest(event));
   }
 
-  public dispatch(name: string, ...args: unknown[]) {
+  public async dispatch(name: string, ...args: unknown[]) {
     const handler = this.functions[name];
 
     if (!handler) {
       throw new Error(`Function ${name} is not registered.`);
     }
 
-    return handler(...args);
+    const result = await handler(...args);
+    return new AppsScriptResponse(result);
   }
 }
+
+type JsonParsed<T> = T extends Date
+  ? string
+  : T extends readonly (infer U)[]
+    ? JsonParsed<U>[]
+    : T extends object
+      ? { [K in keyof T]: JsonParsed<T[K]> }
+      : T;
 
 export type InferAppsScript<T> =
   T extends AppsScript<infer TFunctions>
     ? {
         [K in keyof TFunctions]: {
           args: Parameters<TFunctions[K]>;
-          result: Awaited<ReturnType<TFunctions[K]>>;
+          result: JsonParsed<Awaited<ReturnType<TFunctions[K]>>>;
         };
       }
     : never;

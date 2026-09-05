@@ -47,11 +47,23 @@ jobs:
       - name: Build vite
         run: pnpm --filter @gasboost/vite build
 
+      - name: Typecheck client
+        run: pnpm --filter @gasboost/client typecheck
+
+      - name: Test client
+        run: pnpm --filter @gasboost/client test
+
+      - name: Build client
+        run: pnpm --filter @gasboost/client build
+
       - name: Pack app
         run: pnpm --filter @gasboost/app pack
 
       - name: Pack vite
         run: pnpm --filter @gasboost/vite pack
+
+      - name: Pack client
+        run: pnpm --filter @gasboost/client pack
 
       - name: Smoke test app package
         run: |
@@ -184,3 +196,82 @@ jobs:
           test -f dist/main.js
           grep -q "function doGet" dist/main.js
           grep -q "function sum" dist/main.js
+      - name: Smoke test client package
+        run: |
+          APP_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-app-*.tgz' -print -quit)"
+          CLIENT_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-client-*.tgz' -print -quit)"
+
+          rm -rf /tmp/gasboost-client-consumer
+          mkdir -p /tmp/gasboost-client-consumer/src
+          cd /tmp/gasboost-client-consumer
+
+          pnpm init
+
+          pnpm add "$APP_PACKAGE" "$CLIENT_PACKAGE"
+          pnpm add -D typescript vite @types/google-apps-script
+
+          cat > package.json <<'EOF'
+          {
+          "type": "module",
+          "scripts": {
+              "build": "vite build"
+          }
+          }
+          EOF
+
+          cat > src/server.ts <<'EOF'
+          import {
+          AppsScript,
+          type InferAppsScript,
+          } from "@gasboost/app";
+
+          const app = new AppsScript()
+          .call(
+              "sum",
+              (a: number, b: number) => a + b,
+          );
+
+          export type AppType =
+          InferAppsScript<typeof app>;
+          EOF
+
+          cat > src/main.ts <<'EOF'
+          import { appsScriptClient } from "@gasboost/client";
+          import type { AppType } from "./server";
+
+          const { client } =
+          appsScriptClient<AppType>();
+
+          if (false) {
+          const result: Promise<number> =
+              client.sum(1, 2);
+
+          void result;
+          }
+
+          console.log(typeof client);
+          EOF
+
+          cat > index.html <<'EOF'
+          <script type="module" src="/src/main.ts"></script>
+          EOF
+
+          cat > tsconfig.json <<'EOF'
+          {
+          "compilerOptions": {
+              "target": "ES2022",
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "strict": true,
+              "noEmit": true,
+              "types": ["google-apps-script"],
+              "skipLibCheck": true
+          },
+          "include": ["src"]
+          }
+          EOF
+
+          pnpm exec tsc
+          pnpm build
+
+          test -f dist/index.html

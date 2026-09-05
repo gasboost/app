@@ -1,5 +1,6 @@
 import { expect, expectTypeOf, test } from "vitest";
 import { AppsScript, InferAppsScript } from "../src/AppsScript";
+import { AppsScriptResponse } from "../src/AppsScriptResponse";
 
 test("InferAppsScriptでRPC契約を推論できる", () => {
   const app = new AppsScript()
@@ -32,7 +33,10 @@ test("callでRPC handlerを登録してdispatchできる", async () => {
     async (a: number, b: number) => a + b,
   );
 
-  await expect(app.dispatch("sum", 1, 2)).resolves.toBe(3);
+  const response = await app.dispatch("sum", 1, 2);
+
+  expect(response).toBeInstanceOf(AppsScriptResponse);
+  expect(response.contents).toBe("3");
 });
 
 test("GET eventをAppsScriptHttpRequestとしてhandlerへ渡す", () => {
@@ -94,4 +98,36 @@ test("POST eventのtextとjsonを取得できる", () => {
   });
 
   expect(app.callPost(event)).toBe(output);
+});
+
+test("InferAppsScriptでDateがstringに変換される", () => {
+  const app = new AppsScript().call("getUser", () => ({
+    id: "1",
+    createdAt: new Date(),
+  }));
+
+  type App = InferAppsScript<typeof app>;
+
+  expectTypeOf<App["getUser"]["result"]>().toEqualTypeOf<{
+    id: string;
+    createdAt: string;
+  }>();
+});
+
+test("InferAppsScriptでネストしたDateもstringに変換される", () => {
+  const app = new AppsScript().call("getUsers", () => ({
+    users: [
+      {
+        createdAt: new Date(),
+      },
+    ],
+  }));
+
+  type App = InferAppsScript<typeof app>;
+
+  expectTypeOf<App["getUsers"]["result"]>().toEqualTypeOf<{
+    users: {
+      createdAt: string;
+    }[];
+  }>();
 });
