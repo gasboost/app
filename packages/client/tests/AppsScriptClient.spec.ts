@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AppsScriptJobCancelledError } from "../src/AppsScriptJob";
 
 type SuccessHandler = (result: unknown) => void;
 type FailureHandler = (error: Error) => void;
@@ -266,7 +267,7 @@ describe("appsScriptClient", () => {
     ).toBeUndefined();
   });
 
-  it("jobs.cancelでpending Jobをキャンセルすると後から実行されない", async () => {
+  it("jobs.cancelでpending Jobをキャンセルすると実行されずPromiseがrejectする", async () => {
     const { jobs } = appsScriptClient<TestApp>();
 
     const controls = Array.from({ length: 30 }, () => deferred<void>());
@@ -279,7 +280,7 @@ describe("appsScriptClient", () => {
 
     const pendingExecute = vi.fn(async () => "pending");
 
-    void jobs.start("pending", pendingExecute);
+    const pendingPromise = jobs.start("pending", pendingExecute);
 
     await vi.waitFor(() => {
       expect(jobs.getSnapshot().filter((job) => job.isRunning())).toHaveLength(
@@ -296,15 +297,17 @@ describe("appsScriptClient", () => {
 
     jobs.cancel(pendingJob!.id);
 
+    await expect(pendingPromise).rejects.toBeInstanceOf(
+      AppsScriptJobCancelledError,
+    );
+
     expect(
       jobs.getSnapshot().find((job) => job.id === pendingJob!.id),
     ).toBeUndefined();
 
-    // 1枠空ける
     controls[0].resolve();
     await runningPromises[0];
 
-    // Queueに残っていたらここでpendingが実行される
     await Promise.resolve();
     await Promise.resolve();
 

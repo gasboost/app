@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { AppsScriptJobCancelledError } from "../src/AppsScriptJob";
 import { AppsScriptJobQueue } from "../src/AppsScriptJobQueue";
 import { AppsScriptJobRunner } from "../src/AppsScriptJobRunner";
 
@@ -234,7 +235,7 @@ describe("AppsScriptJobRunner", () => {
 
     const pendingExecute = vi.fn(async () => "pending");
 
-    void queue.enqueue("pending", pendingExecute);
+    const pendingPromise = queue.enqueue("pending", pendingExecute);
 
     await vi.waitFor(() => {
       expect(runner.getJobs().filter((job) => job.isRunning())).toHaveLength(
@@ -249,22 +250,22 @@ describe("AppsScriptJobRunner", () => {
 
     runner.remove(pendingJob!.id);
 
+    await expect(pendingPromise).rejects.toBeInstanceOf(
+      AppsScriptJobCancelledError,
+    );
+
     expect(
       runner.getJobs().find((job) => job.id === pendingJob!.id),
     ).toBeUndefined();
 
-    // 1枠空ける
     controls[0].resolve();
-
     await runningPromises[0];
 
-    // pending JobがQueueに残っていたらここで実行されてしまう
     await Promise.resolve();
     await Promise.resolve();
 
     expect(pendingExecute).not.toHaveBeenCalled();
 
-    // 残りを終了
     for (const control of controls.slice(1)) {
       control.resolve();
     }

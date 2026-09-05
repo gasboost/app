@@ -64,4 +64,16 @@ export class AppsScriptJob<T> {
     if (this.isFailed()) return "failed";
     return "unknown";
   }
+
+  public cancel() {
+    const error = new AppsScriptJobCancelledError();
+    this.fail(error);
+  }
+}
+
+export class AppsScriptJobCancelledError extends Error {
+  constructor() {
+    super("Job cancelled");
+    this.name = "AppsScriptJobCancelledError";
+  }
 }

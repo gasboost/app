@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AppsScriptJob } from "../src/AppsScriptJob";
+import {
+  AppsScriptJob,
+  AppsScriptJobCancelledError,
+} from "../src/AppsScriptJob";
 import {
   AppsScriptJobQueue,
   type RunnableJob,
@@ -85,7 +88,7 @@ describe("AppsScriptJobQueue", () => {
     expect(listener.run).not.toHaveBeenCalled();
   });
 
-  it("removeすると指定したJobをQueueから削除する", () => {
+  it("removeすると指定したJobをQueueから削除し、jobをキャンセルする", async () => {
     const queue = new AppsScriptJobQueue();
 
     const jobs: AppsScriptJob<any>[] = [];
@@ -98,10 +101,20 @@ describe("AppsScriptJobQueue", () => {
     });
 
     void queue.enqueue("first", async () => 1);
-    void queue.enqueue("second", async () => 2);
+
+    const secondPromise = queue.enqueue("second", async () => 2);
+
     void queue.enqueue("third", async () => 3);
 
-    queue.remove(jobs[1].id);
+    const second = jobs.find((job) => job.label === "second");
+
+    expect(second).toBeDefined();
+
+    queue.remove(second!.id);
+
+    await expect(secondPromise).rejects.toBeInstanceOf(
+      AppsScriptJobCancelledError,
+    );
 
     expect(queue.dequeue()?.label).toBe("first");
     expect(queue.dequeue()?.label).toBe("third");

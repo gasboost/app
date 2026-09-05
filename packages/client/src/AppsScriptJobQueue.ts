@@ -42,7 +42,8 @@ export class AppsScriptJobQueue {
     const index = this.jobs.findIndex((job) => job.id === jobId);
 
     if (index !== -1) {
-      this.jobs.splice(index, 1);
+      const [job] = this.jobs.splice(index, 1);
+      job.cancel();
     }
   }
 }
