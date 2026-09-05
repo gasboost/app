@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AppsScriptJob } from "../src/AppsScriptJob";
+import { AppsScriptJob } from "../src/job/AppsScriptJob";
 
 describe("AppsScriptJob", () => {
   it("生成直後はpending", () => {

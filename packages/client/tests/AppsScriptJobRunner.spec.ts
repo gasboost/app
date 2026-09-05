@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { AppsScriptJobCancelledError } from "../src/AppsScriptJob";
-import { AppsScriptJobQueue } from "../src/AppsScriptJobQueue";
-import { AppsScriptJobRunner } from "../src/AppsScriptJobRunner";
+import { AppsScriptJobCancelledError } from "../src/job/AppsScriptJob";
+import { AppsScriptJobQueue } from "../src/job/AppsScriptJobQueue";
+import { AppsScriptJobRunner } from "../src/job/AppsScriptJobRunner";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
