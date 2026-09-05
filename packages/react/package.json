@@ -1,0 +1,18 @@
+{
+  "name": "@gasboost/react",
+  "dependencies": {
+    "@gasboost/client": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^19"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.2.18"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --config vitest.config.mts",
+    "build": "tsc -p tsconfig.json"
+  }
+}
