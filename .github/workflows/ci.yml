@@ -297,31 +297,37 @@ jobs:
           mkdir -p /tmp/gasboost-react-consumer/src
           cd /tmp/gasboost-react-consumer
 
-          pnpm init
-
-          pnpm add "$CLIENT_PACKAGE"
-
-          pnpm add \
-          "$REACT_PACKAGE" \
-          react \
-          react-dom \
-          react-router-dom
-
-          pnpm add -D \
-          typescript \
-          vite \
-          @vitejs/plugin-react \
-          @types/react \
-          @types/react-dom
-
-          cat > package.json <<'EOF'
+          cat > package.json <<EOF
           {
+          "name": "gasboost-react-consumer",
+          "private": true,
           "type": "module",
           "scripts": {
               "build": "vite build"
+          },
+          "dependencies": {
+              "@gasboost/client": "file:$CLIENT_PACKAGE",
+              "@gasboost/react": "file:$REACT_PACKAGE",
+              "react": "^19.0.0",
+              "react-dom": "^19.0.0",
+              "react-router-dom": "^7.0.0"
+          },
+          "devDependencies": {
+              "@types/react": "^19.0.0",
+              "@types/react-dom": "^19.0.0",
+              "@vitejs/plugin-react": "^5.0.0",
+              "typescript": "^5.0.0",
+              "vite": "^7.0.0"
+          },
+          "pnpm": {
+              "overrides": {
+              "@gasboost/client": "file:$CLIENT_PACKAGE"
+              }
           }
           }
           EOF
+
+          pnpm install
 
           cat > src/main.tsx <<'EOF'
           import type { AppsScriptJobStore } from "@gasboost/client";
