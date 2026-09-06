@@ -1,6 +1,6 @@
 {
   "name": "@gasboost/app",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A lightweight TypeScript runtime for building Google Apps Script applications with type-safe GET, POST, and RPC handlers.",
   "keywords": [
     "google-apps-script",
@@ -38,7 +38,7 @@
     "vite": "^8.2.2"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -b tests/consumer &&  rm -rf tests/consumer/.build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && pnpm build && tsc -p tests/consumer/backend --noEmit && tsc -p tests/consumer/frontend --noEmit",
     "test": "vitest run",
     "build": "rm -rf dist && tsc -p tsconfig.build.json"
   },
