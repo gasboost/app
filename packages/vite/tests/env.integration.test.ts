@@ -70,7 +70,7 @@ async function buildEnvFixture({
       gasboost({
         entry,
         envDir,
-      }),
+      }).build,
     ],
 
     build: {

@@ -7,15 +7,12 @@ import { getBuildOutputs } from "./helper";
 
 async function buildFixture(minify: boolean) {
   const entry = resolve(process.cwd(), "tests/fixtures/basic/main.ts");
+  const plugins = gasboost({ entry });
 
   const result = await build({
     logLevel: "silent",
 
-    plugins: [
-      gasboost({
-        entry,
-      }),
-    ],
+    plugins: [plugins.build],
 
     build: {
       minify,

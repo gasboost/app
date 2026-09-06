@@ -51,6 +51,9 @@ importers:
 
   packages/vite:
     dependencies:
+      '@gasboost/app':
+        specifier: workspace:*
+        version: link:../app
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
