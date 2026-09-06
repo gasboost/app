@@ -46,37 +46,71 @@ const app = new AppsScript()
 export default app;
 ```
 
-`gasboost()` から `build` と `dev` を取得して Vite に登録します。
+`gasboost()` から `build` と `dev` を取得し、1つの `vite.config.ts` の中で mode に応じて使い分けます。
+
+frontend と backend は成果物と build graph が異なるため、同時に1つの Vite build へ混在させません。
 
 ```ts
 // vite.config.ts
 
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { viteSingleFile } from "vite-plugin-singlefile";
 import { gasboost } from "@gasboost/vite";
 
 const { build, dev } = gasboost({
   entry: "src/server.ts",
+  envDir: ".env",
 });
 
-export default defineConfig({
-  plugins: [build, dev],
+export default defineConfig(({ mode }) => {
+  if (mode === "server") {
+    return {
+      plugins: [build],
+      build: {
+        outDir: "dist",
+        emptyOutDir: false,
+      },
+    };
+  }
+
+  return {
+    plugins: [react(), viteSingleFile(), dev],
+    build: {
+      outDir: "dist",
+    },
+  };
 });
 ```
 
-`build` と `dev` はそれぞれ適用される Vite command が分かれています。
+この例では、frontend build と backend build を mode で分離します。
+
+```json
+{
+  "scripts": {
+    "dev": "vite",
+    "build:client": "vite build --mode client",
+    "build:server": "vite build --mode server",
+    "build": "pnpm build:client && pnpm build:server"
+  }
+}
+```
 
 ```text
-vite build
-    ↓
-gasboost:build
-
-
-vite / vite dev
-    ↓
+vite
+  ↓
 gasboost:dev
+
+vite build --mode client
+  ↓
+frontend build
+
+vite build --mode server
+  ↓
+gasboost:build
 ```
 
-そのため、両方を `plugins` に登録したまま利用できます。
+frontend 側の React、single-file 化などの設定は利用側プロジェクトの責務です。
 
 ## gasboost()
 
@@ -125,15 +159,25 @@ gasboost({
 
 # Build Plugin
 
-`build` は `vite build` のときだけ動作します。
+`build` は `vite build` のときだけ動作し、GAS backend build を担当します。
+
+frontend / backend を同じ `vite.config.ts` で扱う場合は、server 用 mode のときだけ `plugins` に含めてください。
 
 ```ts
 const { build } = gasboost({
   entry: "src/server.ts",
 });
 
-export default defineConfig({
-  plugins: [build],
+export default defineConfig(({ mode }) => {
+  if (mode === "server") {
+    return {
+      plugins: [build],
+    };
+  }
+
+  return {
+    plugins: [],
+  };
 });
 ```
 
@@ -270,6 +314,8 @@ const apiUrl = import.meta.env.VITE_API_URL;
 # Dev Plugin
 
 `dev` は Vite Dev Server 上でのみ動作します。
+
+frontend の開発用 Vite config に追加して利用します。
 
 ```ts
 const { dev } = gasboost({
@@ -566,7 +612,7 @@ gasboost()
    │    ├─ AppsScript の静的解析
    │    ├─ GAS グローバル関数生成
    │    ├─ GAS 向け build config
-   │    └─ production build
+   │    └─ backend production build
    │
    └─ dev
         ├─ Vite Dev Server middleware
@@ -575,17 +621,27 @@ gasboost()
         └─ AppsScript.dispatch
 ```
 
-通常は両方を登録して使用します。
+frontend と backend を1つの `vite.config.ts` で扱う場合は、mode で分岐します。
 
 ```ts
 const { build, dev } = gasboost({
   entry: "src/server.ts",
 });
 
-export default defineConfig({
-  plugins: [build, dev],
+export default defineConfig(({ mode }) => {
+  if (mode === "server") {
+    return {
+      plugins: [build],
+    };
+  }
+
+  return {
+    plugins: [dev],
+  };
 });
 ```
+
+`build` を通常の frontend build に含めると、server entry が Vite の build input になるため、frontend と backend の build は分離してください。
 
 ## 関連パッケージ
 
