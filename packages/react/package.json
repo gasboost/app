@@ -17,6 +17,10 @@
     "web-app",
     "gasboost"
   ],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
