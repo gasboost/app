@@ -1,6 +1,26 @@
 {
   "name": "@gasboost/client",
   "version": "0.1.1",
+  "description": "Type-safe Google Apps Script RPC client with jobs and navigation.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gasboost/app.git",
+    "directory": "packages/client"
+  },
+  "license": "MIT",
+  "author": "tiger-oshima",
+  "keywords": [
+    "google-apps-script",
+    "gas",
+    "rpc",
+    "typescript",
+    "web-app",
+    "gasboost"
+  ],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
