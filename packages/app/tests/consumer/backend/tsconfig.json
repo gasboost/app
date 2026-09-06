@@ -1,9 +1,5 @@
 {
   "extends": "../../../tsconfig.json",
-  "compilerOptions": {
-    "types": ["google-apps-script"],
-    "typeRoots": ["../../../../../node_modules/@types"]
-  },
   "include": ["main.ts"],
   "exclude": ["../.build"]
 }
