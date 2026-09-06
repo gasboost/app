@@ -141,19 +141,32 @@ jobs:
           mkdir -p /tmp/gasboost-vite-consumer/src
           cd /tmp/gasboost-vite-consumer
 
-          pnpm init
-
-          pnpm add "$APP_PACKAGE"
-          pnpm add -D "$VITE_PACKAGE" vite typescript @types/google-apps-script
-
-          cat > package.json <<'EOF'
+          cat > package.json <<EOF
           {
+            "name": "gasboost-vite-consumer",
+            "private": true,
             "type": "module",
             "scripts": {
               "build": "vite build"
+            },
+            "dependencies": {
+              "@gasboost/app": "file:$APP_PACKAGE"
+            },
+            "devDependencies": {
+              "@gasboost/vite": "file:$VITE_PACKAGE",
+              "vite": "^8.0.0",
+              "typescript": "^7.0.0",
+              "@types/google-apps-script": "^2.0.0"
+            },
+            "pnpm": {
+              "overrides": {
+                "@gasboost/app": "file:$APP_PACKAGE"
+              }
             }
           }
           EOF
+
+          pnpm install
 
           cat > src/main.ts <<'EOF'
           import { AppsScript } from "@gasboost/app";
@@ -176,12 +189,12 @@ jobs:
           import { defineConfig } from "vite";
           import { gasboost } from "@gasboost/vite";
 
+          const { build } = gasboost({
+            entry: "src/main.ts",
+          });
+
           export default defineConfig({
-            plugins: [
-              gasboost({
-                entry: "src/main.ts",
-              }).build,
-            ],
+            plugins: [build],
           });
           EOF
 
