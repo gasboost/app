@@ -1,6 +1,9 @@
 import { AppsScriptHttpRequest } from "./AppsScriptHttpRequest";
+import type { AppsScriptMiddleware } from "./AppsScriptMiddleware";
 import { AppsScriptPostRequest } from "./AppsScriptPostRequest";
 import { AppsScriptResponse } from "./AppsScriptResponse";
+import type { StateMap } from "./AppsScriptState";
+import { AppsScriptState } from "./AppsScriptState";
 
 type DoGetHandler = (
   request: AppsScriptHttpRequest,
@@ -13,10 +16,20 @@ type DoPostHandler = (
 type RpcHandler = (...args: any[]) => any;
 type RpcMap = Record<string, RpcHandler>;
 
-export class AppsScript<TFunctions extends RpcMap = {}> {
+export class AppsScript<
+  TState extends StateMap = {},
+  TFunctions extends RpcMap = {},
+> {
+  public readonly state: AppsScriptState<TState>;
+
+  constructor() {
+    this.state = new AppsScriptState<TState>();
+  }
+
   private doGetHandler: DoGetHandler | null = null;
   private doPostHandler: DoPostHandler | null = null;
   private functions: Record<string, RpcHandler> = {};
+  private middlewares: AppsScriptMiddleware<TState>[] = [];
 
   public get(handler: DoGetHandler): this {
     this.doGetHandler = handler;
@@ -41,7 +54,7 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
   public call<TName extends string, THandler extends RpcHandler>(
     name: TName,
     handler: THandler,
-  ): AppsScript<TFunctions & Record<TName, THandler>> {
+  ): AppsScript<TState, TFunctions & Record<TName, THandler>> {
     if (this.functions[name]) {
       throw new Error(`Function ${name} is already registered.`);
     }
@@ -51,7 +64,7 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
     (globalThis as Record<string, unknown>)[name] = (...args: unknown[]) =>
       this.dispatch(name, ...args);
 
-    return this as AppsScript<TFunctions & Record<TName, THandler>>;
+    return this as AppsScript<TState, TFunctions & Record<TName, THandler>>;
   }
 
   public callGet(event: GoogleAppsScript.Events.AppsScriptHttpRequestEvent) {
@@ -59,7 +72,8 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
       throw new Error("No GET handler registered.");
     }
 
-    return this.doGetHandler(new AppsScriptHttpRequest(event));
+    const getRequest = new AppsScriptHttpRequest(event);
+    return this.execute(() => this.doGetHandler!(getRequest));
   }
 
   public callPost(event: GoogleAppsScript.Events.DoPost) {
@@ -67,7 +81,8 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
       throw new Error("No POST handler registered.");
     }
 
-    return this.doPostHandler(new AppsScriptPostRequest(event));
+    const postRequest = new AppsScriptPostRequest(event);
+    return this.execute(() => this.doPostHandler!(postRequest));
   }
 
   public async dispatch(name: string, ...args: unknown[]) {
@@ -77,8 +92,35 @@ export class AppsScript<TFunctions extends RpcMap = {}> {
       throw new Error(`Function ${name} is not registered.`);
     }
 
-    const result = await handler(...args);
+    const result = await this.execute(() => handler(...args));
     return new AppsScriptResponse(result);
+  }
+
+  public use(middleware: AppsScriptMiddleware<TState>): this {
+    this.middlewares.push(middleware);
+    return this;
+  }
+
+  private execute<TResult>(handler: () => TResult): TResult {
+    let index = -1;
+
+    const next = (currentIndex: number): TResult => {
+      if (currentIndex <= index) {
+        throw new Error("next() called multiple times.");
+      }
+
+      index = currentIndex;
+
+      const middleware = this.middlewares[currentIndex];
+
+      if (!middleware) {
+        return handler();
+      }
+
+      return middleware(this.state, () => next(currentIndex + 1)) as TResult;
+    };
+
+    return next(0);
   }
 }
 
@@ -91,7 +133,7 @@ type JsonParsed<T> = T extends Date
       : T;
 
 export type InferAppsScript<T> =
-  T extends AppsScript<infer TFunctions>
+  T extends AppsScript<infer TState, infer TFunctions>
     ? {
         [K in keyof TFunctions]: {
           args: Parameters<TFunctions[K]>;

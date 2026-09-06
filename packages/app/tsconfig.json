@@ -4,6 +4,11 @@
     "rootDir": ".",
     "types": ["google-apps-script"]
   },
-  "include": ["src", "tests/**/*.spec.ts"],
+  "include": [
+    "src",
+    "tests/**/*.spec.ts",
+    "tests/*.test.ts",
+    "tests/AppsScript.type-spec.ts"
+  ],
   "exclude": ["tests/consumer/.build"]
 }
