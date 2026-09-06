@@ -1,4 +1,4 @@
-import { AppsScript, type InferAppsScript } from "@gasboost/app";
+import { AppsScript, type InferAppsScript } from "../../../dist/index";
 
 const app = new AppsScript()
   .call("getUser", async (id: string) => {
