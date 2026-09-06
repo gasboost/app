@@ -1,24 +1,8 @@
-import { AppsScript, type InferAppsScript } from "../../../dist/index";
+import { app } from "./app";
 
-const app = new AppsScript()
-  .call("getUser", async (id: string) => {
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    const BACKEND_ONLY_MARKER = "__GASBOOST_BACKEND_ONLY__";
-    console.log(BACKEND_ONLY_MARKER);
-    return {
-      id,
-      name: spreadsheet.getName(),
-    };
-  })
-  .call("digest", async (value: string) => {
-    const result = Utilities.computeDigest(
-      Utilities.DigestAlgorithm.SHA_256,
-      value,
-    );
-
-    return result.length;
-  });
-
-export type AppType = InferAppsScript<typeof app>;
+const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+const BACKEND_ONLY_MARKER = "__GASBOOST_BACKEND_ONLY__";
+console.log(BACKEND_ONLY_MARKER, spreadsheet.getName());
+Utilities.getUuid();
 
 export default app;
