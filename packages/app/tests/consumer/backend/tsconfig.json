@@ -5,7 +5,8 @@
     "emitDeclarationOnly": true,
     "rootDir": "../../..",
     "outDir": "../.build/backend",
-    "types": ["google-apps-script"]
+    "types": ["google-apps-script"],
+    "typeRoots": ["../../../node_modules/@types"]
   },
   "include": ["main.ts", "../../../src/**/*.ts"],
   "exclude": ["../.build", "../../../node_modules"]
