@@ -1,6 +1,6 @@
 {
   "name": "@gasboost/app",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "A lightweight TypeScript runtime for building Google Apps Script applications with type-safe GET, POST, and RPC handlers.",
   "keywords": [
     "google-apps-script",
