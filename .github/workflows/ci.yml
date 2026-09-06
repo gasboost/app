@@ -180,7 +180,7 @@ jobs:
             plugins: [
               gasboost({
                 entry: "src/main.ts",
-              }),
+              }).build,
             ],
           });
           EOF

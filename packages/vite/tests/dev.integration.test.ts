@@ -433,11 +433,11 @@ describe("gasboost dev", () => {
 
     await middleware()(request, response, vi.fn());
 
-    expect(response.statusCode).toBe(500);
+    expect(response.statusCode).toBe(400);
 
     expect(JSON.parse(body())).toMatchObject({
       error: {
-        name: "Error",
+        name: "InvalidRpcRequestError",
         message: "Invalid RPC request body. Expected { args: unknown[] }.",
       },
     });

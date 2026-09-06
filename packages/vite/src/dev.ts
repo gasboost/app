@@ -6,6 +6,13 @@ type RpcRequestBody = {
   args: unknown[];
 };
 
+class InvalidRpcRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidRpcRequestError";
+  }
+}
+
 export function createDevPlugin(entry: string): Plugin {
   return {
     name: "gasboost:dev",
@@ -64,7 +71,9 @@ export function createDevPlugin(entry: string): Plugin {
           response.setHeader("Content-Type", "application/json; charset=utf-8");
           response.end(result.contents);
         } catch (error) {
-          response.statusCode = 500;
+          response.statusCode =
+            error instanceof InvalidRpcRequestError ? 400 : 500;
+
           response.setHeader("Content-Type", "application/json; charset=utf-8");
 
           response.end(
@@ -99,38 +108,45 @@ function readRequest(request: IncomingMessage): Promise<RpcRequestBody> {
     request.on("error", reject);
 
     request.on("end", () => {
-      try {
-        const raw = Buffer.concat(chunks).toString("utf-8");
+      const raw = Buffer.concat(chunks).toString("utf-8");
 
-        if (!raw) {
-          resolve({
-            args: [],
-          });
-          return;
-        }
-
-        const body: unknown = JSON.parse(raw);
-
-        if (
-          typeof body !== "object" ||
-          body === null ||
-          !("args" in body) ||
-          !Array.isArray(body.args)
-        ) {
-          reject(
-            new Error(
-              "Invalid RPC request body. Expected { args: unknown[] }.",
-            ),
-          );
-          return;
-        }
-
+      if (!raw) {
         resolve({
-          args: body.args,
+          args: [],
         });
-      } catch (error) {
-        reject(error);
+        return;
       }
+
+      let body: unknown;
+
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        reject(
+          new InvalidRpcRequestError(
+            "Invalid RPC request body. Expected valid JSON.",
+          ),
+        );
+        return;
+      }
+
+      if (
+        typeof body !== "object" ||
+        body === null ||
+        !("args" in body) ||
+        !Array.isArray(body.args)
+      ) {
+        reject(
+          new InvalidRpcRequestError(
+            "Invalid RPC request body. Expected { args: unknown[] }.",
+          ),
+        );
+        return;
+      }
+
+      resolve({
+        args: body.args,
+      });
     });
   });
 }
