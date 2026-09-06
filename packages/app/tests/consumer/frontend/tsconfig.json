@@ -4,6 +4,6 @@
     "noEmit": true,
     "types": []
   },
-  "include": ["globals.ts"],
+  "include": ["main.ts", "globals.ts"],
   "exclude": ["../.build"]
 }
