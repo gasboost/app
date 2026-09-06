@@ -265,12 +265,12 @@ State は logging、authentication、authorization、tracing など、middleware
 
 ## Middleware をパッケージとして提供する
 
-`Middleware` は public API として利用できます。
+`AppsScriptMiddleware` は public API として利用できます。
 
 これにより、`@gasboost/auth` のような外部パッケージから `@gasboost/app` と互換性のある middleware を提供できます。
 
 ```ts
-import type { Middleware } from "@gasboost/app";
+import type { AppsScriptMiddleware } from "@gasboost/app";
 
 interface User {
   id: string;
@@ -281,7 +281,7 @@ type AuthState = {
   user: User;
 };
 
-export const auth = (): Middleware<AuthState> => {
+export const auth = (): AppsScriptMiddleware<AuthState> => {
   return (state, next) => {
     const user = {
       id: "1",
