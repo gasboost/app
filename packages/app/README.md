@@ -2,7 +2,7 @@
 
 Google Apps Script アプリケーション向けの軽量な TypeScript ランタイムです。
 
-Google Apps Script 固有のグローバル関数を直接管理する代わりに、GET / POST / RPC ハンドラを通常の TypeScript API として定義できます。
+Google Apps Script 固有のグローバル関数を直接管理する代わりに、GET / POST / RPC ハンドラや middleware を通常の TypeScript API として定義できます。
 
 ## インストール
 
@@ -118,6 +118,205 @@ const app = new AppsScript()
 
 RPC ハンドラは同期・非同期のどちらにも対応しています。
 
+## Middleware
+
+`.use()` で GET / POST / RPC の実行前後に共通処理を追加できます。
+
+```ts
+const app = new AppsScript()
+  .use((state, next) => {
+    console.log("before");
+
+    const result = next();
+
+    console.log("after");
+
+    return result;
+  })
+  .call("hello", () => {
+    return "Hello";
+  });
+```
+
+middleware は登録順に実行されます。
+
+`next()` を呼ぶと次の middleware へ進み、最後の middleware から `next()` を呼ぶと対象の GET / POST / RPC ハンドラが実行されます。
+
+```ts
+const app = new AppsScript()
+  .use((state, next) => {
+    console.log("middleware 1 before");
+
+    const result = next();
+
+    console.log("middleware 1 after");
+
+    return result;
+  })
+  .use((state, next) => {
+    console.log("middleware 2 before");
+
+    const result = next();
+
+    console.log("middleware 2 after");
+
+    return result;
+  })
+  .call("hello", () => {
+    console.log("handler");
+
+    return "Hello";
+  });
+```
+
+実行順は次のようになります。
+
+```text
+middleware 1 before
+middleware 2 before
+handler
+middleware 2 after
+middleware 1 after
+```
+
+### Short circuit
+
+`next()` を呼ばずに値を返すことで、後続の middleware とハンドラの実行を停止できます。
+
+```ts
+const app = new AppsScript()
+  .use((state, next) => {
+    const authenticated = false;
+
+    if (!authenticated) {
+      return {
+        error: "Unauthorized",
+      };
+    }
+
+    return next();
+  })
+  .call("getProfile", () => {
+    return {
+      name: "Taro",
+    };
+  });
+```
+
+この場合、`getProfile` ハンドラは実行されません。
+
+middleware は GET / POST / RPC のすべてに適用されます。
+
+## State
+
+middleware とハンドラの間で値を共有するために `state` を利用できます。
+
+State の型は `AppsScript` の型引数として定義します。
+
+```ts
+interface User {
+  id: string;
+  name: string;
+}
+
+type AppState = {
+  user: User;
+};
+
+const app = new AppsScript<AppState>();
+```
+
+middleware から値を設定できます。
+
+```ts
+app.use((state, next) => {
+  state.set("user", {
+    id: "1",
+    name: "Taro",
+  });
+
+  return next();
+});
+```
+
+ハンドラからは `app.state` を通して取得できます。
+
+```ts
+app.call("getCurrentUser", () => {
+  return app.state.get("user");
+});
+```
+
+State の key と value は型安全です。
+
+```ts
+app.state.set("user", {
+  id: "1",
+  name: "Taro",
+});
+
+const user = app.state.get("user");
+// User | undefined
+```
+
+存在しない key や異なる型の値は TypeScript の型エラーになります。
+
+State は logging、authentication、authorization、tracing など、middleware から後続処理へ情報を渡す用途に利用できます。
+
+## Middleware をパッケージとして提供する
+
+`Middleware` は public API として利用できます。
+
+これにより、`@gasboost/auth` のような外部パッケージから `@gasboost/app` と互換性のある middleware を提供できます。
+
+```ts
+import type { Middleware } from "@gasboost/app";
+
+interface User {
+  id: string;
+  name: string;
+}
+
+type AuthState = {
+  user: User;
+};
+
+export const auth = (): Middleware<AuthState> => {
+  return (state, next) => {
+    const user = {
+      id: "1",
+      name: "Taro",
+    };
+
+    state.set("user", user);
+
+    return next();
+  };
+};
+```
+
+利用側では通常の middleware と同じように登録できます。
+
+```ts
+import { AppsScript } from "@gasboost/app";
+import { auth } from "@gasboost/auth";
+
+type AppState = {
+  user: {
+    id: string;
+    name: string;
+  };
+};
+
+const app = new AppsScript<AppState>()
+  .use(auth())
+  .call("getCurrentUser", () => {
+    return app.state.get("user");
+  });
+```
+
+これにより、認証などの個別機能を `@gasboost/app` 本体へ組み込まず、独立した middleware パッケージとして提供できます。
+
 ## InferAppsScript
 
 `InferAppsScript` は、登録された RPC からクライアントと共有できる RPC 契約を生成します。
@@ -154,6 +353,8 @@ Promise の戻り値は展開されます。
 また、GAS RPC のレスポンスが JSON として転送されることに合わせて、戻り値に含まれる `Date` は型上でも `string` に変換されます。
 
 配列やオブジェクト内に含まれる `Date` についても再帰的に変換されます。
+
+Middleware や State の型は RPC 契約には含まれません。
 
 ## フロントエンドとの型共有
 
@@ -217,12 +418,17 @@ TypeScript Project References は、この型共有のための必須要件で�
 - GET ハンドラ登録
 - POST ハンドラ登録
 - RPC ハンドラ登録
+- middleware の登録と実行
+- middleware 間およびハンドラとの State 共有
+- middleware による処理の short circuit
 - GAS リクエストのラップ
 - GET / POST dispatch
 - RPC dispatch
 - ハンドラのグローバルランタイムへの登録
 - RPC 契約の型推論
 - GAS RPC の JSON シリアライズに対応した戻り値型の変換
+
+認証、認可、logging、tracing などの個別機能は `@gasboost/app` 本体では扱わず、middleware を利用する別パッケージとして実装できます。
 
 Google Apps Script が静的に認識するためのグローバル関数宣言の生成は `@gasboost/vite` が担当します。
 
