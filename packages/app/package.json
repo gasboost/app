@@ -38,7 +38,7 @@
     "vite": "^8.2.2"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/consumer/backend --noEmit && tsc -p tests/consumer/frontend --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && pnpm build && tsc -p tests/consumer/backend --noEmit && tsc -p tests/consumer/frontend --noEmit",
     "test": "vitest run",
     "build": "rm -rf dist && tsc -p tsconfig.build.json"
   },
