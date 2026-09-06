@@ -1,6 +1,6 @@
 {
   "name": "@gasboost/vite",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "description": "A Vite plugin for building @gasboost/app applications for Google Apps Script.",
   "keywords": [
     "google-apps-script",
@@ -41,7 +41,8 @@
     "build": "rm -rf dist && vite build --config vite.package.config.ts && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "@gasboost/app": "workspace:*"
   },
   "publishConfig": {
     "access": "public"

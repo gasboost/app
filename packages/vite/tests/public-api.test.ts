@@ -26,3 +26,28 @@ test("envDirを指定できる", () => {
 
   expect(options.envDir).toBe("config");
 });
+
+test("build と dev を返す", () => {
+  const { build, dev } = gasboost({
+    entry: "src/server.ts",
+  });
+
+  expect(build.name).toBe("gasboost:build");
+  expect(dev.name).toBe("gasboost:dev");
+});
+
+test("dev は serve のみで動作する", () => {
+  const { dev } = gasboost({
+    entry: "src/server.ts",
+  });
+
+  expect(dev.apply).toBe("serve");
+});
+
+test("build は build のみで動作する", () => {
+  const { build } = gasboost({
+    entry: "src/server.ts",
+  });
+
+  expect(build.apply).toBe("build");
+});

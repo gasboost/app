@@ -35,15 +35,11 @@ afterEach(() => {
 
 async function buildEntry(source: string) {
   const entry = createEntry(source);
-
+  const plugins = gasboost({ entry });
   return build({
     logLevel: "silent",
 
-    plugins: [
-      gasboost({
-        entry,
-      }),
-    ],
+    plugins: [plugins.build],
 
     build: {
       write: false,
@@ -85,7 +81,7 @@ describe("gasboost negative integration", () => {
         plugins: [
           gasboost({
             entry: "/does/not/exist.ts",
-          }),
+          }).build,
         ],
 
         build: {

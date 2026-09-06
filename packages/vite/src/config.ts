@@ -1,7 +1,5 @@
 import path from "node:path";
-
 import type { UserConfig } from "vite";
-
 import type { GasboostOptions } from "./gasboost";
 
 export function createGasboostConfig(options: GasboostOptions): UserConfig {
