@@ -1,4 +1,4 @@
-import type { AppType } from "../backend/app";
+import type { AppType } from "../backend/main";
 
 type Client<T> = {
   [K in keyof T]: T[K] extends {
