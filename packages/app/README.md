@@ -167,81 +167,48 @@ import type { AppType } from "../backend/main";
 
 この型は `@gasboost/client` から利用できます。
 
-### TypeScript Project References
+### GAS 型を backend のみに限定する
 
-バックエンドで定義した `AppType` をフロントエンドへ共有する場合は、バックエンドとフロントエンドを分離した monorepo 構成にし、TypeScript の Project References を利用してください。
+`@types/google-apps-script` が提供する `SpreadsheetApp`、`Utilities`、`HtmlService` などは ambient global 型です。
 
-これは `@gasboost/app` 単体では解決できない TypeScript のプロジェクト境界に関する問題です。
+frontend 側へ GAS 固有の global 型を持ち込まないため、`google-apps-script` の型は backend 側の TypeScript 設定でだけ有効にしてください。
 
-バックエンド側には `google-apps-script` の型が必要ですが、それらをフロントエンドの TypeScript プロジェクトへ直接含めると、GAS 固有のグローバル型がフロントエンド側へ漏れ出します。
-
-そのため、例えば次のようにプロジェクトを分離します。
+例えば次のような構成にできます。
 
 ```text
 project/
 ├── tsconfig.json
-├── backend/
-│   ├── tsconfig.json
-│   └── main.ts
-└── frontend/
-    ├── tsconfig.json
-    └── main.ts
+└── src/
+    ├── backend/
+    │   ├── tsconfig.json
+    │   └── main.ts
+    └── frontend/
+        └── main.ts
 ```
 
-root の `tsconfig.json` では、backend と frontend を Project Reference として登録します。
-
-```json
-{
-  "files": [],
-  "references": [
-    {
-      "path": "./backend"
-    },
-    {
-      "path": "./frontend"
-    }
-  ]
-}
-```
-
-backend 側では GAS の型を有効にし、型宣言を生成できる composite project とします。
+backend の `tsconfig.json` だけに GAS の型を指定します。
 
 ```json
 {
   "compilerOptions": {
-    "composite": true,
-    "declaration": true,
-    "emitDeclarationOnly": true,
     "types": ["google-apps-script"]
   }
 }
 ```
 
-frontend 側では GAS の型を含めず、backend を Project Reference として参照します。
+root や frontend 側では `google-apps-script` を読み込む必要はありません。
 
-```json
-{
-  "compilerOptions": {
-    "composite": true,
-    "declaration": true,
-    "emitDeclarationOnly": true,
-    "types": []
-  },
-  "references": [
-    {
-      "path": "../backend"
-    }
-  ]
-}
-```
-
-これにより、frontend は backend が公開する `AppType` を利用しつつ、`SpreadsheetApp` や `HtmlService` などの GAS 固有のグローバル型を自身の型空間へ取り込みません。
+frontend では backend が export した RPC 契約を `import type` で参照します。
 
 ```ts
 import type { AppType } from "../backend/main";
 ```
 
-`@gasboost/app` の consumer test もこの構成で型境界を検証しています。
+`import type` のため、backend の runtime 実装は frontend bundle に含まれません。
+
+また、backend 配下だけで `google-apps-script` の型を有効にしておけば、`SpreadsheetApp`、`Utilities`、`HtmlService` などの GAS 固有 global 型を frontend 側で利用可能にする必要もありません。
+
+TypeScript Project References は、この型共有のための必須要件ではありません。プロジェクト構成上必要な場合には利用できますが、gasboost の標準的な型共有では backend 側に GAS 型のスコープを限定し、frontend から `import type` する構成で十分です。
 
 ## 責務
 
