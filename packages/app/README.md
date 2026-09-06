@@ -1,8 +1,8 @@
 # @gasboost/app
 
-Google Apps Script アプリケーション向けのランタイムと型安全なハンドラ登録 API を提供します。
+Google Apps Script アプリケーション向けの軽量な TypeScript ランタイムです。
 
-`@gasboost/app` を使うことで、Google Apps Script 固有のグローバル関数を直接管理せず、通常の TypeScript API として GET / POST / RPC ハンドラを定義できます。
+Google Apps Script 固有のグローバル関数を直接管理する代わりに、GET / POST / RPC ハンドラを通常の TypeScript API として定義できます。
 
 ## インストール
 
@@ -16,75 +16,66 @@ npm:
 npm install @gasboost/app
 ```
 
-Google Apps Script のバックエンドを型チェックする場合は GAS の型定義も必要です。
+TypeScript で GAS API を利用する場合は型定義も追加してください。
 
 ```bash
 pnpm add -D @types/google-apps-script
 ```
 
-## AppsScript
-
-`AppsScript` を生成してアプリケーションを定義します。
+## Quick Start
 
 ```ts
 import { AppsScript, type InferAppsScript } from "@gasboost/app";
 
-const app = new AppsScript();
-
-export default app;
-```
-
-ハンドラはチェーン形式で登録できます。
-
-```ts
 const app = new AppsScript()
   .get((request) => {
-    return HtmlService.createHtmlOutput("Hello");
+    const name = request.query("name") ?? "world";
+
+    return HtmlService.createHtmlOutput(`Hello ${name}`);
   })
   .post((request) => {
     return ContentService.createTextOutput(request.text());
   })
-  .call("sum", (a: number, b: number) => a + b);
+  .call("sum", (a: number, b: number) => a + b)
+  .call("getUser", async (id: string) => ({
+    id,
+    name: "Taro",
+  }));
 
 export default app;
+
+export type AppType = InferAppsScript<typeof app>;
 ```
 
 ## GET
 
-`.get()` で `doGet` に相当するハンドラを登録します。
+`.get()` で `doGet` に対応するハンドラを登録します。
 
 ```ts
 const app = new AppsScript().get((request) => {
-  const name = request.query("name") ?? "world";
+  const id = request.query("id");
 
-  return HtmlService.createHtmlOutput(`Hello ${name}`);
+  return ContentService.createTextOutput(id ?? "");
 });
 ```
 
-リクエストのクエリパラメータを取得できます。
+登録すると、GAS から呼び出される `doGet` がグローバルランタイムへ公開されます。
 
-すべての単一値パラメータ:
+クエリパラメータは以下の API から取得できます。
 
 ```ts
 request.query();
-```
+request.query("id");
 
-特定のパラメータ:
-
-```ts
-request.query("name");
-```
-
-複数値パラメータ:
-
-```ts
 request.queries();
 request.queries("tag");
 ```
 
+GET ハンドラは `HtmlOutput` または `TextOutput` を返します。
+
 ## POST
 
-`.post()` で `doPost` に相当するハンドラを登録します。
+`.post()` で `doPost` に対応するハンドラを登録します。
 
 ```ts
 const app = new AppsScript().post((request) => {
@@ -92,10 +83,10 @@ const app = new AppsScript().post((request) => {
 });
 ```
 
-リクエストボディを文字列として取得できます。
+Body を文字列として取得できます。
 
 ```ts
-const text = request.text();
+request.text();
 ```
 
 JSON としてパースすることもできます。
@@ -106,9 +97,11 @@ const body = request.json<{
 }>();
 ```
 
+POST ハンドラも `HtmlOutput` または `TextOutput` を返します。
+
 ## RPC
 
-`.call()` で名前付き RPC ハンドラを登録します。
+`.call()` で名前付き RPC を登録します。
 
 ```ts
 const app = new AppsScript()
@@ -119,24 +112,30 @@ const app = new AppsScript()
   }));
 ```
 
-同じ RPC 名を複数回登録することはできません。
+登録された名前は GAS のグローバルスコープへ公開されます。
 
-登録された RPC はランタイムのグローバルスコープへ公開され、対応する `AppsScript` インスタンスを通じて dispatch されます。
+同じ名前を複数回登録することはできません。
+
+RPC ハンドラは同期・非同期のどちらにも対応しています。
 
 ## InferAppsScript
 
-`InferAppsScript` を使うと、アプリケーションから RPC 契約を型として取り出せます。
+`InferAppsScript` は、登録された RPC からクライアントと共有できる RPC 契約を生成します。
 
 ```ts
-const app = new AppsScript().call("getUser", async (id: string) => ({
-  id,
-  name: "Taro",
-}));
-
 export type AppType = InferAppsScript<typeof app>;
 ```
 
-推論される型は次のようになります。
+例えば、
+
+```ts
+.call("getUser", async (id: string) => ({
+  id,
+  name: "Taro",
+}));
+```
+
+から次の型が推論されます。
 
 ```ts
 type AppType = {
@@ -150,23 +149,103 @@ type AppType = {
 };
 ```
 
-Promise の戻り値は自動的に展開されます。
+Promise の戻り値は展開されます。
+
+また、GAS RPC のレスポンスが JSON として転送されることに合わせて、戻り値に含まれる `Date` は型上でも `string` に変換されます。
+
+配列やオブジェクト内に含まれる `Date` についても再帰的に変換されます。
 
 ## フロントエンドとの型共有
 
-アプリケーションの RPC 契約は、型だけをフロントエンドから import できます。
+バックエンドから RPC 契約だけを import できます。
 
 ```ts
 import type { AppType } from "../backend/main";
 ```
 
-`import type` を利用することで、バックエンドのランタイム実装をフロントエンドの JavaScript bundle に含めずに RPC 契約だけを共有できます。
+`import type` を使用することで、バックエンドのランタイムコードをフロントエンド bundle に含めずに型だけを共有できます。
 
-## ランタイム上の責務
+この型は `@gasboost/client` から利用できます。
 
-`@gasboost/app` はアプリケーションの実行時処理を担当します。
+### TypeScript Project References
 
-主な責務:
+バックエンドで定義した `AppType` をフロントエンドへ共有する場合は、バックエンドとフロントエンドを分離した monorepo 構成にし、TypeScript の Project References を利用してください。
+
+これは `@gasboost/app` 単体では解決できない TypeScript のプロジェクト境界に関する問題です。
+
+バックエンド側には `google-apps-script` の型が必要ですが、それらをフロントエンドの TypeScript プロジェクトへ直接含めると、GAS 固有のグローバル型がフロントエンド側へ漏れ出します。
+
+そのため、例えば次のようにプロジェクトを分離します。
+
+```text
+project/
+├── tsconfig.json
+├── backend/
+│   ├── tsconfig.json
+│   └── main.ts
+└── frontend/
+    ├── tsconfig.json
+    └── main.ts
+```
+
+root の `tsconfig.json` では、backend と frontend を Project Reference として登録します。
+
+```json
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./backend"
+    },
+    {
+      "path": "./frontend"
+    }
+  ]
+}
+```
+
+backend 側では GAS の型を有効にし、型宣言を生成できる composite project とします。
+
+```json
+{
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "types": ["google-apps-script"]
+  }
+}
+```
+
+frontend 側では GAS の型を含めず、backend を Project Reference として参照します。
+
+```json
+{
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "types": []
+  },
+  "references": [
+    {
+      "path": "../backend"
+    }
+  ]
+}
+```
+
+これにより、frontend は backend が公開する `AppType` を利用しつつ、`SpreadsheetApp` や `HtmlService` などの GAS 固有のグローバル型を自身の型空間へ取り込みません。
+
+```ts
+import type { AppType } from "../backend/main";
+```
+
+`@gasboost/app` の consumer test もこの構成で型境界を検証しています。
+
+## 責務
+
+`@gasboost/app` が担当するもの:
 
 - GET ハンドラ登録
 - POST ハンドラ登録
@@ -174,16 +253,15 @@ import type { AppType } from "../backend/main";
 - GAS リクエストのラップ
 - GET / POST dispatch
 - RPC dispatch
-- GAS から呼び出す実体関数のグローバルランタイムへの登録
+- ハンドラのグローバルランタイムへの登録
 - RPC 契約の型推論
+- GAS RPC の JSON シリアライズに対応した戻り値型の変換
 
-Google Apps Script が認識するためのグローバル関数宣言の生成は `@gasboost/vite` が担当します。
+Google Apps Script が静的に認識するためのグローバル関数宣言の生成は `@gasboost/vite` が担当します。
 
 ## GAS API
 
-`@gasboost/app` は Google Apps Script API 自体を抽象化しません。
-
-通常通り GAS API を直接利用できます。
+GAS API 自体は抽象化しません。
 
 ```ts
 SpreadsheetApp.getActive();
@@ -191,19 +269,8 @@ HtmlService.createHtmlOutput();
 ContentService.createTextOutput();
 ```
 
-## 現在の対象外
+通常通り直接利用できます。
 
-現時点では以下を提供しません。
+## License
 
-- Hono 互換
-- URL routing
-- middleware
-- nested router
-- 高機能な HTTP framework
-- Google Apps Script API 全体の抽象化
-
-このパッケージは、TypeScript アプリケーションと Google Apps Script 固有のグローバル関数モデルの境界を扱うことに集中しています。
-
-## 関連パッケージ
-
-Google Apps Script 向けにビルドする場合は `@gasboost/vite` を利用してください。
+MIT

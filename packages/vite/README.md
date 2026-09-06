@@ -1,8 +1,11 @@
 # @gasboost/vite
 
-`@gasboost/app` で構築したアプリケーションを Google Apps Script 向けにビルドするための Vite プラグインです。
+`@gasboost/app` で構築した Google Apps Script アプリケーションを、Vite でビルド・ローカル開発するためのプラグインです。
 
-アプリケーションの entry file を静的解析し、`AppsScript` に登録されたハンドラを検出して、Google Apps Script が認識するためのグローバル関数宣言を生成します。
+`@gasboost/vite` は用途ごとに2つの Vite Plugin を提供します。
+
+- `build` — Google Apps Script 向けの production build
+- `dev` — ローカル開発時の RPC 実行
 
 ## インストール
 
@@ -18,28 +21,32 @@ npm install @gasboost/app
 npm install -D @gasboost/vite vite
 ```
 
-## 使い方
+## Quick Start
 
-まず通常の Gasboost アプリケーションを作成します。
+まず `@gasboost/app` でバックエンドを定義します。
 
 ```ts
-// src/main.ts
+// src/server.ts
 
 import { AppsScript } from "@gasboost/app";
 
 const app = new AppsScript()
-  .get((request) => {
+  .get(() => {
     return HtmlService.createHtmlOutput("Hello");
   })
   .post((request) => {
     return ContentService.createTextOutput(request.text());
   })
-  .call("sum", (a: number, b: number) => a + b);
+  .call("sum", (a: number, b: number) => a + b)
+  .call("getUser", async (id: string) => ({
+    id,
+    name: "Taro",
+  }));
 
 export default app;
 ```
 
-Vite を設定します。
+`gasboost()` から `build` と `dev` を取得して Vite に登録します。
 
 ```ts
 // vite.config.ts
@@ -47,90 +54,98 @@ Vite を設定します。
 import { defineConfig } from "vite";
 import { gasboost } from "@gasboost/vite";
 
+const { build, dev } = gasboost({
+  entry: "src/server.ts",
+});
+
 export default defineConfig({
-  plugins: [
-    gasboost({
-      entry: "src/main.ts",
-    }),
-  ],
+  plugins: [build, dev],
 });
 ```
 
-通常通りビルドできます。
+`build` と `dev` はそれぞれ適用される Vite command が分かれています。
 
-```bash
+```text
 vite build
+    ↓
+gasboost:build
+
+
+vite / vite dev
+    ↓
+gasboost:dev
 ```
 
-## オプション
+そのため、両方を `plugins` に登録したまま利用できます。
+
+## gasboost()
+
+```ts
+const { build, dev } = gasboost({
+  entry: "src/server.ts",
+  envDir: "config",
+});
+```
+
+戻り値:
+
+```ts
+{
+  build: Plugin;
+  dev: Plugin;
+}
+```
 
 ### `entry`
 
 必須です。
 
-`AppsScript` アプリケーションを定義している entry file のパスを指定します。
+`AppsScript` を定義して default export している entry file を指定します。
 
 ```ts
 gasboost({
-  entry: "src/main.ts",
+  entry: "src/server.ts",
 });
-```
-
-entry file には1つの `AppsScript` インスタンスを定義し、そのインスタンスを default export する必要があります。
-
-```ts
-const app = new AppsScript();
-
-export default app;
-```
-
-チェーン形式の登録に対応しています。
-
-```ts
-const app = new AppsScript()
-  .get(...)
-  .post(...)
-  .call("getUser", ...);
-
-export default app;
-```
-
-インスタンス生成後に登録する形式にも対応しています。
-
-```ts
-const app = new AppsScript();
-
-app.get(...);
-app.call("getUser", ...);
-
-export default app;
 ```
 
 ### `envDir`
 
 任意です。
 
-Vite が環境変数ファイルを読み込むディレクトリを指定します。
+build 時に Vite が環境変数ファイルを読み込むディレクトリを指定します。
 
 ```ts
 gasboost({
-  entry: "src/main.ts",
+  entry: "src/server.ts",
   envDir: "config",
 });
 ```
 
-例えば以下の構成を利用できます。
+---
 
-```text
-config/
-├── .env
-├── .env.development
-└── .env.production
+# Build Plugin
+
+`build` は `vite build` のときだけ動作します。
+
+```ts
+const { build } = gasboost({
+  entry: "src/server.ts",
+});
+
+export default defineConfig({
+  plugins: [build],
+});
 ```
 
-## 生成されるグローバル関数
+`build` plugin は次の処理を担当します。
 
-Google Apps Script はトップレベルのグローバル関数を entry point として認識します。
+- entry file の静的解析
+- `AppsScript` に登録された GET / POST / RPC の検出
+- GAS が認識するグローバル関数宣言の生成
+- GAS 向け Vite build configuration
+- 環境変数の読み込み
+
+## グローバル関数の生成
 
 例えば次のアプリケーションを定義した場合:
 
@@ -144,7 +159,7 @@ const app = new AppsScript()
 export default app;
 ```
 
-ビルド結果には以下に対応するグローバル関数宣言が生成されます。
+build plugin は GAS が認識するためのグローバル関数宣言を生成します。
 
 ```js
 function doGet() {}
@@ -153,56 +168,51 @@ function getUser() {}
 function sum() {}
 ```
 
-これらの宣言は Google Apps Script に関数名を認識させるためのものです。
+これらは関数名を Google Apps Script に認識させるための宣言です。
 
-実際の dispatch 処理は行いません。
-
-ハンドラの実体は `@gasboost/app` がランタイム上で登録します。
-
-責務は次のように分離されています。
+実際のハンドラ登録と dispatch は `@gasboost/app` がランタイム上で行います。
 
 ```text
-@gasboost/app
-  runtime registration
-  handler dispatch
-  globalThis implementation
-
 @gasboost/vite
   static analysis
-  GAS build configuration
   global function declarations
+        ↓
+@gasboost/app
+  runtime registration
+  dispatch
 ```
 
 ## 静的解析
 
-プラグインは指定された entry file を静的解析します。
-
-対象となる `AppsScript` インスタンスに対する登録を検出します。
+entry file には1つの `AppsScript` インスタンスを定義し、default export します。
 
 ```ts
+const app = new AppsScript();
+
 app.get(...);
-app.post(...);
 app.call("getUser", ...);
+
+export default app;
 ```
 
-別オブジェクトの同名メソッドは無視されます。
+チェーン形式にも対応しています。
 
 ```ts
-other.get(...);
-other.call("something", ...);
-```
+const app = new AppsScript()
+  .get(...)
+  .post(...)
+  .call("getUser", ...);
 
-### RPC 名
+export default app;
+```
 
 RPC 名は文字列リテラルで指定する必要があります。
-
-対応:
 
 ```ts
 app.call("getUser", handler);
 ```
 
-非対応:
+次のような動的な名前は静的解析の対象外です。
 
 ```ts
 const name = "getUser";
@@ -210,123 +220,378 @@ const name = "getUser";
 app.call(name, handler);
 ```
 
-ビルド時に生成する GAS グローバル関数名を静的に確定するため、この制約があります。
+build 時に GAS のグローバル関数名を確定する必要があるためです。
 
-### 重複登録
+## 検証
 
-以下の曖昧な登録はエラーになります。
+静的解析時には、曖昧なアプリケーション定義をエラーとして扱います。
 
 - GET ハンドラの重複
 - POST ハンドラの重複
 - RPC 名の重複
-- entry 内に複数の `AppsScript` インスタンスが存在する場合
+- entry 内の複数 `AppsScript` インスタンス
+- default export されていない `AppsScript`
 
-`AppsScript` インスタンスは default export されている必要があります。
+## GAS 向け build configuration
 
-## GAS 向けビルド設定
-
-`gasboost()` が Google Apps Script 向けの Vite build configuration を提供します。
-
-現在は以下の設定を利用します。
+現在の build 設定:
 
 - target: ECMAScript 2019
 - output format: CommonJS
 - output directory: `dist`
-- `entry` で指定されたファイルを build input として利用
-
-利用側の Vite config で GAS 固有の build setting を重複して定義する必要はありません。
+- `entry` を build input として利用
 
 ## 環境変数
 
-環境変数は Vite 標準の仕組みを利用します。
-
-例えば:
+Vite 標準の環境変数機構を利用します。
 
 ```text
-config/.env
+config/
+├── .env
+├── .env.development
+└── .env.production
 ```
-
-```env
-VITE_API_URL=https://example.com
-```
-
-`envDir` を設定します。
 
 ```ts
-gasboost({
-  entry: "src/main.ts",
+const { build } = gasboost({
+  entry: "src/server.ts",
   envDir: "config",
 });
 ```
 
-アプリケーションから通常通り参照できます。
+アプリケーションでは通常の Vite と同様に参照できます。
 
 ```ts
 const apiUrl = import.meta.env.VITE_API_URL;
 ```
 
-mode ごとの環境変数ファイルにも対応します。
+---
 
-```bash
-vite build --mode production
+# Dev Plugin
+
+`dev` は Vite Dev Server 上でのみ動作します。
+
+```ts
+const { dev } = gasboost({
+  entry: "src/server.ts",
+});
+
+export default defineConfig({
+  plugins: [dev],
+});
 ```
 
-`envDir: "config"` の場合、例えば以下が読み込まれます。
+`dev` plugin は、GAS にデプロイしなくてもローカル環境から `AppsScript` の RPC を実行できるエンドポイントを Vite Dev Server に追加します。
+
+## Local RPC
+
+ローカル RPC のエンドポイントは次の形式です。
 
 ```text
-config/.env.production
+POST /__gasboost/{rpcName}
 ```
 
-## 責務
-
-`@gasboost/vite` はビルド時の処理のみを担当します。
-
-主な責務:
-
-- `AppsScript` 登録内容の静的解析
-- Google Apps Script 向け Vite configuration
-- GAS グローバル関数宣言の生成
-- Vite 環境変数との統合
-
-以下は担当しません。
-
-- GET ハンドラの実行
-- POST ハンドラの実行
-- RPC dispatch
-- ハンドラ実体のランタイム登録
-- Google Apps Script API 自体の抽象化
-
-これらの runtime responsibility は `@gasboost/app` が担当します。
-
-## 現在の制約
-
-Analyzer は、意図的にシンプルな entry file 構造のみを対象としています。
-
-以下のような alias を介した default export は現在対象外です。
+例えば、
 
 ```ts
-const app = new AppsScript();
-const exported = app;
+const app = new AppsScript().call("sum", (a: number, b: number) => a + b);
 
-export default exported;
+export default app;
 ```
 
-別関数の内部に登録処理を隠す形式も対象外です。
+に対して、
+
+```http
+POST /__gasboost/sum
+Content-Type: application/json
+```
+
+```json
+{
+  "args": [1, 2]
+}
+```
+
+を送信すると、内部では次の dispatch が実行されます。
 
 ```ts
-registerHandlers(app);
+app.dispatch("sum", 1, 2);
 ```
 
-別ファイルに登録処理を分散する形式も現在対象外です。
+レスポンス:
+
+```json
+3
+```
+
+## RPC Request
+
+Request Body は次の形式です。
 
 ```ts
-import { registerHandlers } from "./handlers";
-
-registerHandlers(app);
+{
+  args: unknown[];
+}
 ```
 
-登録内容を entry file から静的に確定できるようにすることで、生成する GAS グローバル関数を決定的にしています。
+例えば複数の引数を持つ RPC:
+
+```ts
+app.call(
+  "example",
+  (id: number, name: string, active: boolean, options: { value: number }) => {
+    // ...
+  },
+);
+```
+
+に対して、
+
+```json
+{
+  "args": [
+    1,
+    "Taro",
+    true,
+    {
+      "value": 4
+    }
+  ]
+}
+```
+
+のように送信できます。
+
+### 引数なし RPC
+
+Request Body が空の場合は、引数なし RPC として扱われます。
+
+```http
+POST /__gasboost/noArgs
+```
+
+内部では次のように dispatch されます。
+
+```ts
+app.dispatch("noArgs");
+```
+
+明示的に送る場合は次でも構いません。
+
+```json
+{
+  "args": []
+}
+```
+
+## RPC Response
+
+`@gasboost/app` の `dispatch()` が返す `AppsScriptResponse.contents` を、そのまま HTTP Response Body として返します。
+
+例えば、
+
+```ts
+app.call("getUser", () => ({
+  id: 1,
+  name: "Taro",
+}));
+```
+
+に対するレスポンスは:
+
+```json
+{
+  "id": 1,
+  "name": "Taro"
+}
+```
+
+となります。
+
+Response の Content-Type は:
+
+```text
+application/json; charset=utf-8
+```
+
+です。
+
+## Async RPC
+
+非同期 RPC にも対応しています。
+
+```ts
+app.call("loadUser", async (id: string) => {
+  const user = await loadUser(id);
+
+  return user;
+});
+```
+
+dev plugin は `dispatch()` の完了を待ってからレスポンスを返します。
+
+## 開発中の module loading
+
+RPC リクエストごとに、指定された `entry` を Vite の `ssrLoadModule()` で読み込みます。
+
+```text
+POST /__gasboost/sum
+        ↓
+ssrLoadModule("src/server.ts")
+        ↓
+AppsScript.dispatch("sum", ...)
+```
+
+そのため、Vite Dev Server 上の最新のサーバーコードを利用して RPC を実行できます。
+
+## Error Response
+
+### 不正な Request Body
+
+JSON として不正な body や、`args` が配列でない body は `400` を返します。
+
+```json
+{
+  "args": "invalid"
+}
+```
+
+レスポンス例:
+
+```json
+{
+  "error": {
+    "name": "InvalidRpcRequestError",
+    "message": "Invalid RPC request body. Expected { args: unknown[] }."
+  }
+}
+```
+
+JSON 自体が不正な場合も `400` です。
+
+### POST 以外
+
+Local RPC endpoint は POST のみ受け付けます。
+
+```http
+GET /__gasboost/sum
+```
+
+は `405` になります。
+
+```json
+{
+  "error": {
+    "name": "MethodNotAllowedError",
+    "message": "Only POST is allowed."
+  }
+}
+```
+
+### 未登録 RPC
+
+存在しない RPC を呼び出した場合は `500` を返します。
+
+```text
+POST /__gasboost/unknown
+```
+
+```json
+{
+  "error": {
+    "name": "Error",
+    "message": "Function unknown is not registered."
+  }
+}
+```
+
+### Handler Error
+
+RPC handler 内で例外が発生した場合も `500` として JSON で返されます。
+
+```json
+{
+  "error": {
+    "name": "TypeError",
+    "message": "handler failed"
+  }
+}
+```
+
+## Local RPC の対象 path
+
+次の形式だけを RPC として扱います。
+
+```text
+/__gasboost/{rpcName}
+```
+
+例えば以下は対象です。
+
+```text
+/__gasboost/getUser
+/__gasboost/sum
+```
+
+一方、次のような path は RPC として扱いません。
+
+```text
+/__gasboost/
+/__gasboost/foo/bar
+/api/users
+```
+
+通常の Vite middleware chain に処理を渡します。
+
+query string が付いていても RPC 名は正しく解決されます。
+
+```text
+/__gasboost/hello?foo=bar
+```
+
+URL encoded な RPC 名も decode されます。
+
+```text
+/__gasboost/hello%20world
+```
+
+---
+
+# build と dev の責務
+
+```text
+gasboost()
+   │
+   ├─ build
+   │    ├─ AppsScript の静的解析
+   │    ├─ GAS グローバル関数生成
+   │    ├─ GAS 向け build config
+   │    └─ production build
+   │
+   └─ dev
+        ├─ Vite Dev Server middleware
+        ├─ Local RPC endpoint
+        ├─ entry の ssrLoadModule
+        └─ AppsScript.dispatch
+```
+
+通常は両方を登録して使用します。
+
+```ts
+const { build, dev } = gasboost({
+  entry: "src/server.ts",
+});
+
+export default defineConfig({
+  plugins: [build, dev],
+});
+```
 
 ## 関連パッケージ
 
-アプリケーションの runtime と handler registration には `@gasboost/app` を利用してください。
+- `@gasboost/app` — GAS バックエンドランタイムと RPC 定義
+- `@gasboost/client` — フロントエンド側の型安全 RPC クライアント
+
+## License
+
+MIT
