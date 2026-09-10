@@ -1,5 +1,4 @@
 import type { AppsScript, AppsScriptDescription } from "@gasboost/app";
-import { resolve } from "node:path";
 import {
   createServer,
   isRunnableDevEnvironment,
@@ -25,10 +24,8 @@ export async function loadAppsScript(
     envDir: options.envDir,
     appType: "custom",
 
-    resolve: {
-      alias: {
-        "@gasboost/app": resolve(config.root, "packages/app/src/index.ts"),
-      },
+    ssr: {
+      external: ["@gasboost/app"],
     },
 
     server: {
