@@ -167,3 +167,29 @@ test("callsでも既存callと同じ重複登録エラーになる", () => {
       }),
   ).toThrow("Function duplicate is already registered.");
 });
+
+test("describeで登録状態を取得できる", () => {
+  const app = new AppsScript()
+    .get(() => ({}) as GoogleAppsScript.HTML.HtmlOutput)
+    .call("getUser", () => ({ id: "1" }))
+    .call("saveUser", () => undefined);
+
+  expect(app.describe()).toEqual({
+    hasGet: true,
+    hasPost: false,
+    calls: ["getUser", "saveUser"],
+  });
+});
+
+test("describeでcallsによる登録も取得できる", () => {
+  const app = new AppsScript().calls({
+    signIn: () => undefined,
+    signOut: () => undefined,
+  });
+
+  expect(app.describe()).toEqual({
+    hasGet: false,
+    hasPost: false,
+    calls: ["signIn", "signOut"],
+  });
+});

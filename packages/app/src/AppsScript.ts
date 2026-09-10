@@ -16,6 +16,12 @@ type DoPostHandler = (
 type RpcHandler = (...args: any[]) => any;
 type RpcMap = Record<string, RpcHandler>;
 
+export type AppsScriptDescription = {
+  readonly hasGet: boolean;
+  readonly hasPost: boolean;
+  readonly calls: readonly string[];
+};
+
 export class AppsScript<
   TState extends StateMap = {},
   TFunctions extends RpcMap = {},
@@ -131,6 +137,14 @@ export class AppsScript<
     }
 
     return this as AppsScript<TState, TFunctions & THandlers>;
+  }
+
+  public describe(): AppsScriptDescription {
+    return {
+      hasGet: this.doGetHandler !== null,
+      hasPost: this.doPostHandler !== null,
+      calls: Object.keys(this.functions),
+    };
   }
 }
 
