@@ -1,7 +1,8 @@
 import type { AppsScript } from "@gasboost/app";
 import type { IncomingMessage } from "node:http";
-import type { Plugin } from "vite";
-
+import { type Plugin, isRunnableDevEnvironment } from "vite";
+import type { GasboostOptions } from "./gasboost";
+import { installGasRuntime } from "./runtime";
 type RpcRequestBody = {
   args: unknown[];
 };
@@ -13,12 +14,14 @@ class InvalidRpcRequestError extends Error {
   }
 }
 
-export function createDevPlugin(entry: string): Plugin {
+export function createDevPlugin(options: GasboostOptions): Plugin {
+  const { runtime } = options;
   return {
     name: "gasboost:dev",
     apply: "serve",
 
     configureServer(server) {
+      installGasRuntime(runtime);
       server.middlewares.use(async (request, response, next) => {
         if (!request.url) {
           next();
@@ -58,7 +61,13 @@ export function createDevPlugin(entry: string): Plugin {
         try {
           const { args } = await readRequest(request);
 
-          const module = (await server.ssrLoadModule(entry)) as {
+          const environment = server.environments.ssr;
+
+          if (!isRunnableDevEnvironment(environment)) {
+            throw new Error("Vite SSR environment is not runnable.");
+          }
+
+          const module = (await environment.runner.import(options.entry)) as {
             default: AppsScript;
           };
 

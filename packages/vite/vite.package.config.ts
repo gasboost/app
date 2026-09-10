@@ -8,7 +8,14 @@ export default defineConfig({
       fileName: "index",
     },
     rollupOptions: {
-      external: ["vite", /^typescript/, /^node:/],
+      external: [
+        "vite",
+        /^typescript/,
+        /^node:/,
+        "@gasboost/app",
+        "@gasboost/fake-core",
+        "@gasboost/fake-node",
+      ],
     },
   },
 });

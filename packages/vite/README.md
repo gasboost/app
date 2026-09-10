@@ -643,6 +643,58 @@ export default defineConfig(({ mode }) => {
 
 `build` を通常の frontend build に含めると、server entry が Vite の build input になるため、frontend と backend の build は分離してください。
 
+---
+
+## GAS ランタイム
+
+`@gasboost/vite` は、build 時と local RPC 実行時に server entry を実際に評価します。
+
+一般的な GAS API は、デフォルトのローカルランタイムから提供されます。
+
+```ts
+import { gasboost } from "@gasboost/vite";
+
+export default gasboost({
+  entry: "./src/server.ts",
+});
+```
+
+entry の初期化時に追加の GAS API が必要な場合は、`runtime` から差し込めます。
+
+```ts
+import { SpreadsheetAppStub } from "@gasboost/sheetorm";
+import { gasboost } from "@gasboost/vite";
+
+export default gasboost({
+  entry: "./src/server.ts",
+  runtime: {
+    SpreadsheetApp: SpreadsheetAppStub,
+  },
+});
+```
+
+`runtime` に渡した値は、デフォルトのローカルランタイムを上書きします。
+
+このランタイムは build 時の entry 評価と、local RPC 実行時の両方で利用されます。
+
+基本的には、module 初期化時に必要な API だけを差し込み、実際の GAS API 呼び出しは handler 実行時まで遅延させることを推奨します。
+
+## ランタイム解析
+
+GET / POST / RPC の登録状態は、entry ファイルを静的解析するのではなく、実際に評価された `AppsScript` インスタンスから取得します。
+
+そのため、import 先、ヘルパー関数、loop、`AppsScript.calls()` 経由の登録にも対応できます。
+
+```ts
+const app = new AppsScript();
+
+for (const [name, handler] of Object.entries(handlers)) {
+  app.call(name, handler);
+}
+
+export default app;
+```
+
 ## 関連パッケージ
 
 - `@gasboost/app` — GAS バックエンドランタイムと RPC 定義

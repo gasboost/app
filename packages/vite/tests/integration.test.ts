@@ -5,10 +5,17 @@ import { describe, expect, test } from "vitest";
 import { gasboost } from "../src/gasboost";
 import { getBuildOutputs } from "./helper";
 
-async function buildFixture(minify: boolean) {
-  const entry = resolve(process.cwd(), "tests/fixtures/basic/main.ts");
-  const plugins = gasboost({ entry });
+async function buildFixture(
+  minify: boolean,
+  fixture = "basic",
+  runtime?: Record<string, unknown>,
+) {
+  const entry = resolve(process.cwd(), `tests/fixtures/${fixture}/main.ts`);
 
+  const plugins = gasboost({
+    entry,
+    runtime,
+  });
   const result = await build({
     logLevel: "silent",
 
@@ -98,5 +105,35 @@ describe("gasboost integration", () => {
     expect(output).toContain("getUser");
 
     expect(output).toContain("sum");
+  });
+
+  test("import先のcalls登録をruntime inspectionで検出する", async () => {
+    const output = await buildFixture(false, "runtime-inspection");
+
+    expect(output).toContain("signIn");
+    expect(output).toContain("signOut");
+  });
+
+  test("loopで登録したRPCをruntime inspectionで検出する", async () => {
+    const output = await buildFixture(false, "runtime-loop");
+
+    expect(output).toContain("first");
+    expect(output).toContain("second");
+  });
+
+  test("build時にdefault GAS runtimeを利用できる", async () => {
+    const output = await buildFixture(false, "default-runtime");
+
+    expect(output).toContain("uuid");
+  });
+
+  test("build時にdefault GAS runtimeをoverrideできる", async () => {
+    const output = await buildFixture(false, "runtime-override", {
+      Utilities: {
+        getUuid: () => "custom-uuid",
+      },
+    });
+
+    expect(output).toContain("runtimeValue");
   });
 });
