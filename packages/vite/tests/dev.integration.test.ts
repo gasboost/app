@@ -8,6 +8,15 @@ import type {
 import { describe, expect, test, vi } from "vitest";
 import { gasboost } from "../src/gasboost";
 
+vi.mock("vite", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("vite")>();
+
+  return {
+    ...actual,
+    isRunnableDevEnvironment: () => true,
+  };
+});
+
 function createRequest({
   method = "POST",
   url = "/__gasboost/sum",
@@ -64,6 +73,10 @@ function createServer(app: { dispatch: ReturnType<typeof vi.fn> }) {
       ) => void | Promise<void>)
     | undefined;
 
+  const importModule = vi.fn(async () => ({
+    default: app,
+  }));
+
   const server = {
     middlewares: {
       use: vi.fn(
@@ -79,13 +92,18 @@ function createServer(app: { dispatch: ReturnType<typeof vi.fn> }) {
       ),
     },
 
-    ssrLoadModule: vi.fn(async () => ({
-      default: app,
-    })),
+    environments: {
+      ssr: {
+        runner: {
+          import: importModule,
+        },
+      },
+    },
   };
 
   return {
     server,
+    importModule,
 
     middleware() {
       if (!middleware) {
@@ -123,7 +141,7 @@ describe("gasboost dev", () => {
       entry: "src/server.ts",
     });
 
-    const { server, middleware } = createServer({
+    const { server, middleware, importModule } = createServer({
       dispatch,
     });
 
@@ -141,7 +159,7 @@ describe("gasboost dev", () => {
 
     await middleware()(request, response, next);
 
-    expect(server.ssrLoadModule).toHaveBeenCalledWith("src/server.ts");
+    expect(importModule).toHaveBeenCalledWith("src/server.ts");
 
     expect(dispatch).toHaveBeenCalledWith("sum", 1, 2);
 
@@ -271,7 +289,7 @@ describe("gasboost dev", () => {
       entry: "src/server.ts",
     });
 
-    const { server, middleware } = createServer({
+    const { server, middleware, importModule } = createServer({
       dispatch,
     });
 
@@ -289,7 +307,7 @@ describe("gasboost dev", () => {
 
     expect(next).toHaveBeenCalledOnce();
 
-    expect(server.ssrLoadModule).not.toHaveBeenCalled();
+    expect(importModule).not.toHaveBeenCalled();
 
     expect(dispatch).not.toHaveBeenCalled();
   });
@@ -584,7 +602,7 @@ describe("gasboost dev", () => {
       entry: "src/server.ts",
     });
 
-    const { server, middleware } = createServer({
+    const { server, middleware, importModule } = createServer({
       dispatch,
     });
 
@@ -616,10 +634,10 @@ describe("gasboost dev", () => {
       vi.fn(),
     );
 
-    expect(server.ssrLoadModule).toHaveBeenCalledTimes(2);
+    expect(importModule).toHaveBeenCalledTimes(2);
 
-    expect(server.ssrLoadModule).toHaveBeenNthCalledWith(1, "src/server.ts");
+    expect(importModule).toHaveBeenNthCalledWith(1, "src/server.ts");
 
-    expect(server.ssrLoadModule).toHaveBeenNthCalledWith(2, "src/server.ts");
+    expect(importModule).toHaveBeenNthCalledWith(2, "src/server.ts");
   });
 });

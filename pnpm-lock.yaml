@@ -54,10 +54,19 @@ importers:
       '@gasboost/app':
         specifier: workspace:*
         version: link:../app
+      '@gasboost/fake-core':
+        specifier: ^0.1.2
+        version: 0.1.2
+      '@gasboost/fake-node':
+        specifier: ^0.1.2
+        version: 0.1.2(date-fns@4.4.0)
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
     devDependencies:
+      '@types/google-apps-script':
+        specifier: ^2.0.12
+        version: 2.0.12
       vite:
         specifier: ^8.2.2
         version: 8.2.2(@types/node@26.4.1)
@@ -132,6 +141,12 @@ packages:
     peerDependenciesMeta:
       '@noble/hashes':
         optional: true
+
+  '@gasboost/fake-core@0.1.2':
+    resolution: {integrity: sha512-FYicRmQK21hyUV31S1Ed6/GFtReL8Vv96rc3tQhJk3vQ5G+Y31GfCnX78CxuhyS45Gg+tOnkGLzByvK5EP38aQ==}
+
+  '@gasboost/fake-node@0.1.2':
+    resolution: {integrity: sha512-OJrPW+cG7TESUVuNmG6+QXa1RR1GohH3R1dxLFpXLhzYeHtETiBRoIcru+kIn6kh445UKzOp+2O0OWlzmPBJ+Q==}
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -446,6 +461,14 @@ packages:
     resolution: {integrity: sha512-23XHcCF+coGYevirZceTVD7NdJOqVn+49IHyxgszm+JIiHLoB2TkmPtsYkNWT1pvRSGkc35L6NHs0yHkN2SumA==}
     engines: {node: ^20.19.0 || ^22.12.0 || >=24.0.0}
 
+  date-fns-tz@3.2.0:
+    resolution: {integrity: sha512-sg8HqoTEulcbbbVXeg84u5UnlsQa8GS5QXMqjjYIhS4abEVVKIUwe0/l/UhrZdKaL/W5eWZNlbTeEIiOXTcsBQ==}
+    peerDependencies:
+      date-fns: ^3.0.0 || ^4.0.0
+
+  date-fns@4.4.0:
+    resolution: {integrity: sha512-+1UMbeh68lH1SegH83CGWwpb6OHHbpSgr3+s5Eww5M4CAgswBpoWS0AjTOfEJ33HiYKz1hdj/KTFprzXHmq/6w==}
+
   decimal.js@10.6.0:
     resolution: {integrity: sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==}
 
@@ -482,6 +505,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
 
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
@@ -878,6 +904,16 @@ snapshots:
 
   '@exodus/bytes@1.15.1': {}
 
+  '@gasboost/fake-core@0.1.2': {}
+
+  '@gasboost/fake-node@0.1.2(date-fns@4.4.0)':
+    dependencies:
+      '@gasboost/fake-core': 0.1.2
+      date-fns-tz: 3.2.0(date-fns@4.4.0)
+      fflate: 0.8.3
+    transitivePeerDependencies:
+      - date-fns
+
   '@jridgewell/resolve-uri@3.1.2': {}
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
@@ -1078,6 +1114,12 @@ snapshots:
     transitivePeerDependencies:
       - '@noble/hashes'
 
+  date-fns-tz@3.2.0(date-fns@4.4.0):
+    dependencies:
+      date-fns: 4.4.0
+
+  date-fns@4.4.0: {}
+
   decimal.js@10.6.0: {}
 
   dequal@2.0.3: {}
@@ -1099,6 +1141,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
       picomatch: 4.0.7
+
+  fflate@0.8.3: {}
 
   fsevents@2.3.3:
     optional: true

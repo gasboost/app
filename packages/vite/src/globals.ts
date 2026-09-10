@@ -1,4 +1,4 @@
-import type { AppsScriptAnalysis } from "./analyzer";
+import type { AppsScriptDescription } from "@gasboost/app";
 
 const reservedNames = new Set(["doGet", "doPost"]);
 
@@ -12,7 +12,7 @@ function ensureValidGlobalFunctionName(name: string): void {
   }
 }
 
-export function createGlobalCode(analysis: AppsScriptAnalysis): string {
+export function createGlobalCode(analysis: AppsScriptDescription): string {
   const declarations: string[] = [];
 
   if (analysis.hasGet) {

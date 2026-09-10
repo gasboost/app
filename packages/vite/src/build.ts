@@ -1,13 +1,13 @@
-import type { Plugin } from "vite";
-
-import type { AppsScriptAnalysis } from "./analyzer";
-import { analyzeAppsScript } from "./analyzer";
+import { AppsScriptDescription } from "@gasboost/app";
+import type { Plugin, ResolvedConfig } from "vite";
 import { createGasboostConfig } from "./config";
 import type { GasboostOptions } from "./gasboost";
 import { createGlobalCode } from "./globals";
+import { loadAppsScript } from "./loadAppsScript";
 
 export function createBuildPlugin(options: GasboostOptions): Plugin {
-  let analysis: AppsScriptAnalysis;
+  let config: ResolvedConfig;
+  let analysis: AppsScriptDescription;
 
   return {
     name: "gasboost:build",
@@ -17,8 +17,12 @@ export function createBuildPlugin(options: GasboostOptions): Plugin {
       return createGasboostConfig(options);
     },
 
-    buildStart() {
-      analysis = analyzeAppsScript(options.entry);
+    configResolved(resolvedConfig) {
+      config = resolvedConfig;
+    },
+
+    async buildStart() {
+      analysis = await loadAppsScript(options, config);
     },
 
     generateBundle(_, bundle) {
