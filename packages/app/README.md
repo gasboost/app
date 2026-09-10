@@ -118,6 +118,25 @@ const app = new AppsScript()
 
 RPC ハンドラは同期・非同期のどちらにも対応しています。
 
+### 複数の RPC handler をまとめて登録する
+
+`calls()` を使うと、複数の RPC handler をまとめて登録できます。
+
+```ts
+const handlers = {
+  signIn: (email: string, password: string) => {
+    // ...
+  },
+  signOut: () => {
+    // ...
+  },
+};
+
+const app = new AppsScript().calls(handlers);
+```
+
+`calls()` は内部的に既存の `call()` と同じ登録処理を使用します。
+
 ## Middleware
 
 `.use()` で GET / POST / RPC の実行前後に共通処理を追加できます。

@@ -122,6 +122,16 @@ export class AppsScript<
 
     return next(0);
   }
+
+  public calls<THandlers extends RpcMap>(
+    handlers: THandlers,
+  ): AppsScript<TState, TFunctions & THandlers> {
+    for (const [name, handler] of Object.entries(handlers)) {
+      this.call(name, handler);
+    }
+
+    return this as AppsScript<TState, TFunctions & THandlers>;
+  }
 }
 
 type JsonParsed<T> = T extends Date

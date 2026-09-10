@@ -131,3 +131,39 @@ test("InferAppsScriptでネストしたDateもstringに変換される", () => {
     }[];
   }>();
 });
+
+test("callsで複数のRPC handlerを登録してdispatchできる", async () => {
+  const app = new AppsScript().calls({
+    add: (a: number, b: number) => a + b,
+    greet: (name: string) => `Hello, ${name}`,
+  });
+
+  const addResponse = await app.dispatch("add", 1, 2);
+  const greetResponse = await app.dispatch("greet", "Taro");
+
+  expect(addResponse.contents).toBe("3");
+  expect(greetResponse.contents).toBe('"Hello, Taro"');
+});
+
+test("callとcallsを混在してRPC handlerを登録できる", async () => {
+  const app = new AppsScript()
+    .call("first", () => "first")
+    .calls({
+      second: () => "second",
+      third: () => "third",
+    });
+
+  expect((await app.dispatch("first")).contents).toBe('"first"');
+  expect((await app.dispatch("second")).contents).toBe('"second"');
+  expect((await app.dispatch("third")).contents).toBe('"third"');
+});
+
+test("callsでも既存callと同じ重複登録エラーになる", () => {
+  expect(() =>
+    new AppsScript()
+      .call("duplicate", () => 1)
+      .calls({
+        duplicate: () => 2,
+      }),
+  ).toThrow("Function duplicate is already registered.");
+});
