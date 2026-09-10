@@ -85,3 +85,50 @@ const secondResult: AppWithMiddlewareBetweenCalls["second"]["result"] =
 
 void firstResult;
 void secondResult;
+
+const appWithCalls = new AppsScript().calls({
+  getUser: (id: string) => ({
+    id,
+    createdAt: new Date(),
+  }),
+  sum: (a: number, b: number) => a + b,
+} as const);
+
+type AppWithCalls = InferAppsScript<typeof appWithCalls>;
+
+const callsGetUserArgs: AppWithCalls["getUser"]["args"] = ["123"];
+const callsGetUserResult: AppWithCalls["getUser"]["result"] = {
+  id: "123",
+  createdAt: new Date().toISOString(),
+};
+const callsSumArgs: AppWithCalls["sum"]["args"] = [1, 2];
+const callsSumResult: AppWithCalls["sum"]["result"] = 3;
+
+void callsGetUserArgs;
+void callsGetUserResult;
+void callsSumArgs;
+void callsSumResult;
+
+// @ts-expect-error getUserの引数はstring
+const invalidCallsGetUserArgs: AppWithCalls["getUser"]["args"] = [123];
+
+// @ts-expect-error sumの引数はnumber, number
+const invalidCallsSumArgs: AppWithCalls["sum"]["args"] = ["1", "2"];
+
+void invalidCallsGetUserArgs;
+void invalidCallsSumArgs;
+
+const handlers = {
+  findUser: (id: string) => ({ id }),
+  countUsers: () => 10,
+};
+
+const appWithHandlerObject = new AppsScript().calls(handlers);
+
+type AppWithHandlerObject = InferAppsScript<typeof appWithHandlerObject>;
+
+const findUserArgs: AppWithHandlerObject["findUser"]["args"] = ["1"];
+const countUsersResult: AppWithHandlerObject["countUsers"]["result"] = 10;
+
+void findUserArgs;
+void countUsersResult;
