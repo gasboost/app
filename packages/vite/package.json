@@ -34,8 +34,7 @@
   "type": "module",
   "devDependencies": {
     "@types/google-apps-script": "^2.0.12",
-    "vite": "^8.2.2",
-    "@gasboost/client": "workspace:*"
+    "vite": "^8.2.2"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

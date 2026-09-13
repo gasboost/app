@@ -291,12 +291,23 @@ describe("gasboost dev client transport", () => {
       import.meta.url,
     ).pathname;
 
+    const clientEntry = new URL(
+      "./fixtures/client-production/client.ts",
+      import.meta.url,
+    ).pathname;
+
     const { dev } = gasboost({
       entry: "src/server.ts",
     });
 
     const result = await build({
       logLevel: "silent",
+
+      resolve: {
+        alias: {
+          "@gasboost/client": clientEntry,
+        },
+      },
 
       plugins: [dev],
 
@@ -315,6 +326,7 @@ describe("gasboost dev client transport", () => {
       .join("\n");
 
     expect(output).toContain("AppsScriptTransport");
+    expect(output).toContain("google.script.run");
     expect(output).not.toContain("/__gasboost");
   });
 });
