@@ -8,6 +8,7 @@ export interface GasboostOptions {
   entry: string;
   envDir?: string;
   runtime?: GasRuntime;
+  template?: Record<string, string>;
 }
 
 export function gasboost(options: GasboostOptions): {

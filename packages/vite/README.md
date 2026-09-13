@@ -673,6 +673,82 @@ dev plugin が明示指定された transport を上書きすることはあり�
 
 ---
 
+## HtmlTemplate variables
+
+GAS の `HtmlTemplate` では、`<?= variable ?>` を使用してサーバー側の値を HTML に埋め込めます。
+
+```html
+<script>
+  const variables = "<?= variables ?>";
+</script>
+```
+
+GAS 上では `HtmlTemplate` によって評価されますが、Vite Dev Server では GAS のテンプレート処理が実行されません。
+
+`@gasboost/vite` では、`template` オプションを指定することで、開発時にこれらの template variables を置換できます。
+
+```ts
+import { gasboost } from "@gasboost/vite";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [
+    gasboost({
+      entry: "./src/backend/main.ts",
+      template: {
+        variables: JSON.stringify({
+          scriptId: "local-script-id",
+          isSetupCompleted: true,
+          isTermsAccepted: true,
+        }),
+      },
+    }).dev,
+  ],
+});
+```
+
+例えば、次の HTML は、
+
+```html
+<script>
+  const variables = "<?= variables ?>";
+</script>
+```
+
+Vite の開発環境では次のように変換されます。
+
+```html
+<script>
+  const variables =
+    '{"scriptId":"local-script-id","isSetupCompleted":true,"isTermsAccepted":true}';
+</script>
+```
+
+複数の template variable も指定できます。
+
+```ts
+gasboost({
+  entry: "./src/backend/main.ts",
+  template: {
+    environment: "development",
+    userName: "Tiger",
+  },
+});
+```
+
+```html
+<p>Environment: <?= environment ?></p>
+<p>User: <?= userName ?></p>
+```
+
+`template` の型は `Record<string, string>` です。
+
+値の serialize は `@gasboost/vite` では行いません。オブジェクトなどを埋め込む場合は、利用側で `JSON.stringify()` などを使用して文字列へ変換してください。
+
+`template` による置換は Vite Dev Server でのみ行われます。production build では値を埋め込まず、GAS 上で実際の `HtmlTemplate` が template expression を評価します。
+
+---
+
 # build と dev の責務
 
 ```text

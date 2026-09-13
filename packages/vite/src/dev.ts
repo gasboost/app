@@ -20,7 +20,7 @@ const VIRTUAL_CLIENT_MODULE_ID = "\0gasboost:client";
 const LOCAL_RPC_ENDPOINT = "/__gasboost";
 
 export function createDevPlugin(options: GasboostOptions): Plugin {
-  const { runtime } = options;
+  const { runtime, template } = options;
 
   let resolvedClientModuleId: string | undefined;
 
@@ -168,7 +168,30 @@ export function appsScriptClient(options = {}) {
         }
       });
     },
+
+    transformIndexHtml(html) {
+      if (!template) {
+        return html;
+      }
+
+      let transformed = html;
+
+      for (const [name, value] of Object.entries(template)) {
+        const expression = new RegExp(
+          `<\\?=\\s*${escapeRegExp(name)}\\s*\\?>`,
+          "g",
+        );
+
+        transformed = transformed.replace(expression, () => value);
+      }
+
+      return transformed;
+    },
   };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function readRequest(request: IncomingMessage): Promise<RpcRequestBody> {
