@@ -153,4 +153,14 @@ describe("template", () => {
 
     expect(result).toBe("<div>development</div>");
   });
+  it("replacement patternを含むvalueをそのまま挿入する", () => {
+    const result = transformHtml({
+      template: {
+        value: "$& $$ $` $'",
+      },
+      html: "<div><?= value ?></div>",
+    });
+
+    expect(result).toBe("<div>$& $$ $` $'</div>");
+  });
 });

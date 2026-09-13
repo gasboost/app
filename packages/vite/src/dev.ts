@@ -182,7 +182,7 @@ export function appsScriptClient(options = {}) {
           "g",
         );
 
-        transformed = transformed.replace(expression, value);
+        transformed = transformed.replace(expression, () => value);
       }
 
       return transformed;
