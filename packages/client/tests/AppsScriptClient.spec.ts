@@ -41,8 +41,8 @@ vi.stubGlobal("google", {
   },
 });
 
-const { appsScriptClient, appsScriptTransport } =
-  await import("../src/AppsScriptClient");
+const { appsScriptClient } = await import("../src/AppsScriptClient");
+const { AppsScriptTransport } = await import("../src/AppsScriptTransport");
 
 type TestApp = {
   sum: {
@@ -80,13 +80,15 @@ function deferred<T>() {
   };
 }
 
-describe("appsScriptTransport", () => {
+describe("AppsScriptTransport", () => {
   beforeEach(() => {
     serverFunctions = {};
   });
 
   it("指定したGAS関数を引数付きで呼び出す", () => {
-    const promise = appsScriptTransport.call("sum", [1, 2]);
+    const transport = new AppsScriptTransport();
+
+    const promise = transport.call("sum", [1, 2]);
 
     expect(serverFunctions.sum).toHaveBeenCalledWith(1, 2);
 
@@ -100,13 +102,31 @@ describe("appsScriptTransport", () => {
   });
 
   it("failure handlerのErrorをrejectする", async () => {
-    const promise = appsScriptTransport.call("fail", []);
+    const transport = new AppsScriptTransport();
+
+    const promise = transport.call("fail", []);
 
     const error = new Error("failed");
 
     failureHandler(error);
 
     await expect(promise).rejects.toBe(error);
+  });
+
+  it("指定したTransportをRPCに利用する", async () => {
+    const transport = {
+      call: vi.fn().mockResolvedValue({
+        contents: "3",
+      }),
+    };
+
+    const { client } = appsScriptClient<TestApp>({
+      transport,
+    });
+
+    await expect(client.sum(1, 2)).resolves.toBe(3);
+
+    expect(transport.call).toHaveBeenCalledWith("sum", [1, 2]);
   });
 });
 
