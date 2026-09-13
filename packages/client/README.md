@@ -62,7 +62,13 @@ const user = await client.getUser("user-1");
 
 ## RPC Transport
 
-RPC は Google Apps Script が提供する `google.script.run` を利用して実行されます。
+`@gasboost/client` は RPC の実行先を `Transport` として抽象化しています。
+
+デフォルトでは `AppsScriptTransport` が利用され、Google Apps Script が提供する `google.script.run` を通して RPC を実行します。
+
+```ts
+const { client } = appsScriptClient<AppType>();
+```
 
 例えば、
 
@@ -70,7 +76,7 @@ RPC は Google Apps Script が提供する `google.script.run` を利用して�
 await client.sum(1, 2);
 ```
 
-は内部的には対応する GAS のサーバー関数を、
+はデフォルトでは対応する GAS のサーバー関数を、
 
 ```text
 google.script.run.sum(1, 2)
@@ -78,9 +84,159 @@ google.script.run.sum(1, 2)
 
 のように呼び出します。
 
-成功時には `AppsScriptResponse.contents` を JSON として parse し、その結果を返します。
+成功時には `RpcResponse.contents` を JSON として parse し、その結果を返します。
 
 GAS 側の失敗は Promise の reject としてそのまま伝播します。
+
+### Transport の差し替え
+
+`appsScriptClient()` には任意の `Transport` を指定できます。
+
+```ts
+import { appsScriptClient, FetchTransport } from "@gasboost/client";
+
+const { client } = appsScriptClient<AppType>({
+  transport: new FetchTransport({
+    endpoint: "/rpc",
+  }),
+});
+```
+
+`Transport` は次のインターフェースを持ちます。
+
+```ts
+interface Transport {
+  call(name: string, args: unknown[]): Promise<RpcResponse>;
+}
+```
+
+独自の `Transport` を実装することで、RPC の実行先を差し替えられます。
+
+```ts
+import type { RpcResponse, Transport } from "@gasboost/client";
+
+class CustomTransport implements Transport {
+  public async call(name: string, args: unknown[]): Promise<RpcResponse> {
+    // 任意の RPC transport
+  }
+}
+```
+
+### AppsScriptTransport
+
+`AppsScriptTransport` は `google.script.run` を利用する標準 Transport です。
+
+```ts
+import { AppsScriptTransport } from "@gasboost/client";
+
+const transport = new AppsScriptTransport();
+```
+
+`appsScriptClient()` に `transport` を指定しなかった場合、自動的に `AppsScriptTransport` が利用されます。
+
+### FetchTransport
+
+`FetchTransport` は HTTP endpoint に対して `fetch` で RPC を実行する Transport です。
+
+```ts
+import { FetchTransport } from "@gasboost/client";
+
+const transport = new FetchTransport({
+  endpoint: "/rpc",
+});
+```
+
+RPC 名は endpoint の末尾に追加されます。
+
+```text
+POST /rpc/{rpcName}
+```
+
+引数は JSON body として送信されます。
+
+```json
+{
+  "args": [1, 2]
+}
+```
+
+成功した HTTP response の body は `RpcResponse.contents` として扱われます。
+
+HTTP endpoint がエラーを返した場合、次の形式の error response を利用できます。
+
+```json
+{
+  "error": {
+    "name": "Error",
+    "message": "RPC failed",
+    "stack": "..."
+  }
+}
+```
+
+`FetchTransport` は特定の開発環境やサーバー実装には依存しません。
+
+Vite、Cloud Run、Cloudflare Workers など、同じ RPC protocol を提供する任意の HTTP endpoint に利用できます。
+
+## Export
+
+現在 `@gasboost/client` から公開されている主な API:
+
+```ts
+appsScriptClient;
+
+AppsScriptTransport;
+FetchTransport;
+
+Transport;
+RpcResponse;
+
+AppsScriptJob;
+AppsScriptJobStore;
+AppsScriptHistoryPipeline;
+```
+
+## ローカル RPC について
+
+`@gasboost/vite` の `dev` plugin は、Vite Dev Server 上に Local RPC endpoint を提供します。
+
+```text
+POST /__gasboost/{rpcName}
+```
+
+`FetchTransport` を利用することで、この endpoint に RPC を送信できます。
+
+```ts
+const { client } = appsScriptClient<AppType>({
+  transport: new FetchTransport({
+    endpoint: "/__gasboost",
+  }),
+});
+```
+
+ただし、`@gasboost/client` 自体は Vite やローカル開発環境を判定しません。
+
+開発環境で `FetchTransport` を自動的に利用する仕組みは `@gasboost/vite` が担当します。
+
+## 責務
+
+`@gasboost/client` が担当するもの:
+
+- `AppType` に基づく型安全 RPC client
+- RPC Transport の抽象
+- `google.script.run` を利用する `AppsScriptTransport`
+- HTTP RPC を利用する `FetchTransport`
+- JSON response の parse
+- RPC / 非同期処理の Job Queue
+- Job の状態管理
+- pending Job の cancel
+- Job の retry
+- Job Store の購読
+- GAS Container と iframe の History 同期
+
+開発環境に応じた Transport の選択は `@gasboost/vite` が担当します。
+
+React 固有の処理は `@gasboost/react` が担当します。
 
 ## JSON Response
 

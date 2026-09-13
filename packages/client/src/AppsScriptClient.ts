@@ -1,12 +1,9 @@
-import { google } from "./google";
+import { AppsScriptTransport } from "./AppsScriptTransport";
 import { AppsScriptJob } from "./job/AppsScriptJob";
 import { AppsScriptJobQueue } from "./job/AppsScriptJobQueue";
 import { AppsScriptJobRunner } from "./job/AppsScriptJobRunner";
 import { appsScriptJobStore } from "./job/AppsScriptJobStore";
-
-type RpcResponse = {
-  contents: string;
-};
+import type { Transport } from "./Transport";
 
 type RpcDefinition = {
   args: unknown[];
@@ -24,17 +21,6 @@ type AppsScriptClient<TApp extends RpcApp> = {
     : never;
 };
 
-export const appsScriptTransport = {
-  call(name: string, args: unknown[]): Promise<RpcResponse> {
-    return new Promise((resolve, reject) => {
-      google.script.run
-        .withSuccessHandler(resolve)
-        .withFailureHandler(reject)
-        [name](...args);
-    });
-  },
-};
-
 interface AppsScriptJobs {
   start: <T>(label: string, execute: () => Promise<T>) => Promise<T>;
   cancel: (jobId: string) => void;
@@ -43,7 +29,13 @@ interface AppsScriptJobs {
   getSnapshot: () => AppsScriptJob<any>[];
 }
 
-export function appsScriptClient<TApp extends RpcApp>(): {
+export interface AppsScriptClientOptions {
+  transport?: Transport;
+}
+
+export function appsScriptClient<TApp extends RpcApp>({
+  transport = new AppsScriptTransport(),
+}: AppsScriptClientOptions = {}): {
   client: AppsScriptClient<TApp>;
   jobs: AppsScriptJobs;
 } {
@@ -61,8 +53,9 @@ export function appsScriptClient<TApp extends RpcApp>(): {
 
         return (...args: unknown[]) => {
           return jobQueue.enqueue(property, async () => {
-            const res = await appsScriptTransport.call(property, args);
-            return JSON.parse(res.contents);
+            const response = await transport.call(property, args);
+
+            return JSON.parse(response.contents);
           });
         };
       },
@@ -77,5 +70,8 @@ export function appsScriptClient<TApp extends RpcApp>(): {
     getSnapshot: jobStore.getSnapshot.bind(jobStore),
   };
 
-  return { client, jobs };
+  return {
+    client,
+    jobs,
+  };
 }
