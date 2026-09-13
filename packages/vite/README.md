@@ -603,6 +603,76 @@ URL encoded な RPC 名も decode されます。
 
 ---
 
+## Client Transport
+
+`@gasboost/client` を利用している場合、dev plugin はローカル開発時の transport を自動で Local RPC に切り替えます。
+
+アプリケーション側では development / production を判定する必要はありません。
+
+```ts
+import { appsScriptClient } from "@gasboost/client";
+import type { App } from "./server";
+
+const { client } = appsScriptClient<App>();
+
+const result = await client.sum(1, 2);
+```
+
+Vite Dev Server 上では、`appsScriptClient()` に transport が指定されていない場合、dev plugin が自動的に `FetchTransport` を適用します。
+
+```text
+appsScriptClient()
+        ↓
+FetchTransport
+        ↓
+POST /__gasboost/{rpcName}
+        ↓
+AppsScript.dispatch()
+```
+
+そのため、ローカル開発用に transport を切り替えるコードを書く必要はありません。
+
+```ts
+// 不要
+appsScriptClient({
+  transport: import.meta.env.DEV
+    ? new FetchTransport({
+        endpoint: "/__gasboost",
+      })
+    : new AppsScriptTransport(),
+});
+```
+
+production build では dev plugin による差し替えは行われません。
+
+GAS 上では `appsScriptClient()` のデフォルトである `AppsScriptTransport` がそのまま利用されます。
+
+```text
+appsScriptClient()
+        ↓
+AppsScriptTransport
+        ↓
+google.script.run
+```
+
+つまり、同じ application code のまま local development と GAS production の両方で利用できます。
+
+```ts
+const { client } = appsScriptClient<App>();
+```
+
+また、明示的に `transport` を指定した場合はその transport が優先されます。
+
+```ts
+const { client } = appsScriptClient<App>({
+  transport: customTransport,
+});
+```
+
+dev plugin が明示指定された transport を上書きすることはありません。
+
+---
+
 # build と dev の責務
 
 ```text

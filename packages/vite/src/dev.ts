@@ -3,6 +3,7 @@ import type { IncomingMessage } from "node:http";
 import { type Plugin, isRunnableDevEnvironment } from "vite";
 import type { GasboostOptions } from "./gasboost";
 import { installGasRuntime } from "./runtime";
+
 type RpcRequestBody = {
   args: unknown[];
 };
@@ -14,14 +15,79 @@ class InvalidRpcRequestError extends Error {
   }
 }
 
+const CLIENT_MODULE_ID = "@gasboost/client";
+const VIRTUAL_CLIENT_MODULE_ID = "\0gasboost:client";
+const LOCAL_RPC_ENDPOINT = "/__gasboost";
+
 export function createDevPlugin(options: GasboostOptions): Plugin {
   const { runtime } = options;
+
+  let resolvedClientModuleId: string | undefined;
+
   return {
     name: "gasboost:dev",
     apply: "serve",
+    enforce: "pre",
+
+    async resolveId(source, importer, resolveOptions) {
+      if (source !== CLIENT_MODULE_ID) {
+        return null;
+      }
+
+      if (this.environment.config.consumer !== "client") {
+        return null;
+      }
+
+      const resolved = await this.resolve(source, importer, {
+        ...resolveOptions,
+        skipSelf: true,
+      });
+
+      if (!resolved) {
+        return null;
+      }
+
+      resolvedClientModuleId = resolved.id;
+
+      return VIRTUAL_CLIENT_MODULE_ID;
+    },
+
+    load(id) {
+      if (id !== VIRTUAL_CLIENT_MODULE_ID) {
+        return null;
+      }
+
+      if (!resolvedClientModuleId) {
+        throw new Error("@gasboost/client could not be resolved.");
+      }
+
+      const clientModuleId = JSON.stringify(resolvedClientModuleId);
+      const endpoint = JSON.stringify(LOCAL_RPC_ENDPOINT);
+
+      return `
+import {
+  appsScriptClient as originalAppsScriptClient,
+  FetchTransport,
+} from ${clientModuleId};
+
+export * from ${clientModuleId};
+
+export function appsScriptClient(options = {}) {
+  return originalAppsScriptClient({
+    ...options,
+    transport:
+      options.transport ??
+      new FetchTransport({
+        endpoint: ${endpoint},
+      }),
+  });
+}
+`;
+    },
 
     configureServer(server) {
       installGasRuntime(runtime);
+
       server.middlewares.use(async (request, response, next) => {
         if (!request.url) {
           next();
@@ -29,8 +95,7 @@ export function createDevPlugin(options: GasboostOptions): Plugin {
         }
 
         const pathname = request.url.split("?")[0];
-
-        const prefix = "/__gasboost/";
+        const prefix = `${LOCAL_RPC_ENDPOINT}/`;
 
         if (!pathname.startsWith(prefix)) {
           next();
