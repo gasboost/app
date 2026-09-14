@@ -60,7 +60,7 @@ describe("AppsScript middleware integration", () => {
       const order: string[] = [];
 
       const app = new AppsScript()
-        .use((_state, next) => {
+        .use((_context, next) => {
           order.push("middleware");
           return next();
         })
@@ -78,7 +78,7 @@ describe("AppsScript middleware integration", () => {
       const handler = vi.fn((a: number, b: number) => a + b);
 
       const app = new AppsScript()
-        .use((_state, next) => next())
+        .use((_context, next) => next())
         .call("sum", handler);
 
       await app.dispatch("sum", 1, 2);
@@ -88,7 +88,7 @@ describe("AppsScript middleware integration", () => {
 
     it("async RPC handlerをawaitする", async () => {
       const app = new AppsScript()
-        .use((_state, next) => next())
+        .use((_context, next) => next())
         .call("hello", async () => {
           return "hello";
         });
@@ -100,7 +100,7 @@ describe("AppsScript middleware integration", () => {
 
     it("middlewareを経由してもAppsScriptResponseを返す", async () => {
       const app = new AppsScript()
-        .use((_state, next) => next())
+        .use((_context, next) => next())
         .call("hello", () => "hello");
 
       const response = await app.dispatch("hello");
@@ -120,7 +120,7 @@ describe("AppsScript middleware integration", () => {
     });
 
     it("未登録RPCはエラーになる", async () => {
-      const app = new AppsScript().use((_state, next) => next());
+      const app = new AppsScript().use((_context, next) => next());
 
       await expect(app.dispatch("missing")).rejects.toThrow(
         "Function missing is not registered.",
@@ -143,7 +143,7 @@ describe("AppsScript middleware integration", () => {
 
       const app = new AppsScript();
 
-      app.use((_state, next) => {
+      app.use((_context, next) => {
         order.push("middleware");
         return next();
       });
@@ -166,8 +166,8 @@ describe("AppsScript middleware integration", () => {
         user: string;
       }>();
 
-      app.use((state, next) => {
-        state.set("user", "alice");
+      app.use((context, next) => {
+        context.state.set("user", "alice");
         return next();
       });
 
@@ -216,7 +216,7 @@ describe("AppsScript middleware integration", () => {
 
       const app = new AppsScript();
 
-      app.use((_state, next) => {
+      app.use((_context, next) => {
         order.push("middleware");
         return next();
       });
@@ -239,8 +239,8 @@ describe("AppsScript middleware integration", () => {
         user: string;
       }>();
 
-      app.use((state, next) => {
-        state.set("user", "alice");
+      app.use((context, next) => {
+        context.state.set("user", "alice");
         return next();
       });
 

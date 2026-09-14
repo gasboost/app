@@ -1,4 +1,6 @@
+import { AppsScriptContext } from "./AppsScriptContext";
 import { AppsScriptHttpRequest } from "./AppsScriptHttpRequest";
+import type { AppsScriptInvocation } from "./AppsScriptInvocation";
 import type { AppsScriptMiddleware } from "./AppsScriptMiddleware";
 import { AppsScriptPostRequest } from "./AppsScriptPostRequest";
 import { AppsScriptResponse } from "./AppsScriptResponse";
@@ -78,8 +80,15 @@ export class AppsScript<
       throw new Error("No GET handler registered.");
     }
 
-    const getRequest = new AppsScriptHttpRequest(event);
-    return this.execute(() => this.doGetHandler!(getRequest));
+    const request = new AppsScriptHttpRequest(event);
+
+    return this.execute(
+      {
+        type: "get",
+        request,
+      },
+      () => this.doGetHandler!(request),
+    );
   }
 
   public callPost(event: GoogleAppsScript.Events.DoPost) {
@@ -87,8 +96,15 @@ export class AppsScript<
       throw new Error("No POST handler registered.");
     }
 
-    const postRequest = new AppsScriptPostRequest(event);
-    return this.execute(() => this.doPostHandler!(postRequest));
+    const request = new AppsScriptPostRequest(event);
+
+    return this.execute(
+      {
+        type: "post",
+        request,
+      },
+      () => this.doPostHandler!(request),
+    );
   }
 
   public async dispatch(name: string, ...args: unknown[]) {
@@ -98,7 +114,15 @@ export class AppsScript<
       throw new Error(`Function ${name} is not registered.`);
     }
 
-    const result = await this.execute(() => handler(...args));
+    const result = await this.execute(
+      {
+        type: "call",
+        name,
+        args,
+      },
+      () => handler(...args),
+    );
+
     return new AppsScriptResponse(result);
   }
 
@@ -107,7 +131,12 @@ export class AppsScript<
     return this;
   }
 
-  private execute<TResult>(handler: () => TResult): TResult {
+  private execute<TResult>(
+    invocation: AppsScriptInvocation,
+    handler: () => TResult,
+  ): TResult {
+    const context = new AppsScriptContext(this.state, invocation);
+
     let index = -1;
 
     const next = (currentIndex: number): TResult => {
@@ -123,7 +152,7 @@ export class AppsScript<
         return handler();
       }
 
-      return middleware(this.state, () => next(currentIndex + 1)) as TResult;
+      return middleware(context, () => next(currentIndex + 1)) as TResult;
     };
 
     return next(0);

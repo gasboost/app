@@ -1,4 +1,12 @@
-import { AppsScript, type InferAppsScript } from "../src/AppsScript";
+import {
+  AppsScript,
+  type AppsScriptCallInvocation,
+  type AppsScriptGetInvocation,
+  type AppsScriptInvocation,
+  type AppsScriptMiddleware,
+  type AppsScriptPostInvocation,
+  type InferAppsScript,
+} from "../src";
 
 const app = new AppsScript<{
   user: string;
@@ -8,9 +16,9 @@ const app = new AppsScript<{
     id,
     createdAt: new Date(),
   }))
-  .use((state, next) => {
-    state.set("user", "alice");
-    state.set("authenticated", true);
+  .use((context, next) => {
+    context.state.set("user", "alice");
+    context.state.set("authenticated", true);
 
     return next();
   })
@@ -72,7 +80,7 @@ const appWithMiddlewareBetweenCalls = new AppsScript<{
   user: string;
 }>()
   .call("first", () => 1)
-  .use((_state, next) => next())
+  .use((_context, next) => next())
   .call("second", () => "second");
 
 type AppWithMiddlewareBetweenCalls = InferAppsScript<
@@ -132,3 +140,58 @@ const countUsersResult: AppWithHandlerObject["countUsers"]["result"] = 10;
 
 void findUserArgs;
 void countUsersResult;
+
+const contextMiddleware: AppsScriptMiddleware<{
+  user: string;
+}> = (context, next) => {
+  const middlewareUser: string | undefined = context.state.get("user");
+
+  void middlewareUser;
+
+  switch (context.invocation.type) {
+    case "get": {
+      const invocation: AppsScriptGetInvocation = context.invocation;
+      const token: string | undefined = invocation.request.query("token");
+
+      void token;
+
+      break;
+    }
+
+    case "post": {
+      const invocation: AppsScriptPostInvocation = context.invocation;
+      const token: string | undefined = invocation.request.query("token");
+      const body: unknown = invocation.request.json();
+
+      void token;
+      void body;
+
+      break;
+    }
+
+    case "call": {
+      const invocation: AppsScriptCallInvocation = context.invocation;
+      const name: string = invocation.name;
+      const args: readonly unknown[] = invocation.args;
+
+      void name;
+      void args;
+
+      break;
+    }
+  }
+
+  return next();
+};
+
+void contextMiddleware;
+
+const acceptsInvocation = (_invocation: AppsScriptInvocation): void => {};
+
+const getInvocation = null as unknown as AppsScriptGetInvocation;
+const postInvocation = null as unknown as AppsScriptPostInvocation;
+const callInvocation = null as unknown as AppsScriptCallInvocation;
+
+acceptsInvocation(getInvocation);
+acceptsInvocation(postInvocation);
+acceptsInvocation(callInvocation);
