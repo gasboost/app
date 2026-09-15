@@ -6,11 +6,11 @@ describe("AppsScript middleware", () => {
     const order: string[] = [];
 
     const app = new AppsScript()
-      .use((_state, next) => {
+      .use((_context, next) => {
         order.push("middleware1");
         return next();
       })
-      .use((_state, next) => {
+      .use((_context, next) => {
         order.push("middleware2");
         return next();
       })
@@ -28,7 +28,7 @@ describe("AppsScript middleware", () => {
     const order: string[] = [];
 
     const app = new AppsScript()
-      .use((_state, next) => {
+      .use((_context, next) => {
         order.push("middleware1 before");
 
         const result = next();
@@ -37,7 +37,7 @@ describe("AppsScript middleware", () => {
 
         return result;
       })
-      .use((_state, next) => {
+      .use((_context, next) => {
         order.push("middleware2 before");
 
         const result = next();
@@ -63,7 +63,7 @@ describe("AppsScript middleware", () => {
   });
 
   it("middlewareがnextを呼ばない場合は後続middlewareとhandlerを実行しない", async () => {
-    const middleware2 = vi.fn((_state, next) => next());
+    const middleware2 = vi.fn((_context, next) => next());
     const handler = vi.fn(() => "handler");
 
     const app = new AppsScript()
@@ -81,7 +81,7 @@ describe("AppsScript middleware", () => {
     let resultFromNext: unknown;
 
     const app = new AppsScript()
-      .use((_state, next) => {
+      .use((_context, next) => {
         resultFromNext = next();
         return resultFromNext;
       })
@@ -94,7 +94,7 @@ describe("AppsScript middleware", () => {
 
   it("middlewareからhandlerの戻り値を変更できる", async () => {
     const app = new AppsScript()
-      .use((_state, next) => {
+      .use((_context, next) => {
         next();
         return "middleware-result";
       })
@@ -107,7 +107,7 @@ describe("AppsScript middleware", () => {
 
   it("nextを2回呼ぶとエラーになる", async () => {
     const app = new AppsScript()
-      .use((_state, next) => {
+      .use((_context, next) => {
         next();
         return next();
       })
@@ -124,12 +124,12 @@ describe("AppsScript middleware", () => {
     const app = new AppsScript<{
       user: string;
     }>()
-      .use((state, next) => {
-        state.set("user", "alice");
+      .use((context, next) => {
+        context.state.set("user", "alice");
         return next();
       })
-      .use((state, next) => {
-        receivedUser = state.get("user");
+      .use((context, next) => {
+        receivedUser = context.state.get("user");
         return next();
       })
       .call("test", () => "ok");
@@ -145,8 +145,8 @@ describe("AppsScript middleware", () => {
     const app = new AppsScript<{
       user: string;
     }>()
-      .use((state, next) => {
-        state.set("user", "alice");
+      .use((context, next) => {
+        context.state.set("user", "alice");
         return next();
       })
       .call("test", () => {
@@ -165,10 +165,10 @@ describe("AppsScript middleware", () => {
     const app = new AppsScript<{
       user: string;
     }>()
-      .use((state, next) => {
+      .use((context, next) => {
         const result = next();
 
-        receivedUser = state.get("user");
+        receivedUser = context.state.get("user");
 
         return result;
       })
@@ -180,6 +180,115 @@ describe("AppsScript middleware", () => {
     await app.dispatch("test");
 
     expect(receivedUser).toBe("alice");
+  });
+
+  it("同じ実行ではmiddleware間で同じcontextを共有する", async () => {
+    const contexts: unknown[] = [];
+
+    const app = new AppsScript()
+      .use((context, next) => {
+        contexts.push(context);
+        return next();
+      })
+      .use((context, next) => {
+        contexts.push(context);
+        return next();
+      })
+      .call("test", () => "ok");
+
+    await app.dispatch("test");
+
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0]).toBe(contexts[1]);
+  });
+
+  it("GET middlewareからrequest queryを取得できる", () => {
+    const output = {} as GoogleAppsScript.Content.TextOutput;
+
+    const event = {
+      parameter: {
+        token: "secret",
+      },
+      parameters: {
+        token: ["secret"],
+      },
+    } as unknown as GoogleAppsScript.Events.AppsScriptHttpRequestEvent;
+
+    let token: string | undefined;
+
+    const app = new AppsScript()
+      .use((context, next) => {
+        if (context.invocation.type === "get") {
+          token = context.invocation.request.query("token");
+        }
+
+        return next();
+      })
+      .get(() => output);
+
+    app.callGet(event);
+
+    expect(token).toBe("secret");
+  });
+
+  it("POST middlewareからrequest queryとbodyを取得できる", () => {
+    const output = {} as GoogleAppsScript.Content.TextOutput;
+
+    const event = {
+      parameter: {
+        token: "secret",
+      },
+      parameters: {
+        token: ["secret"],
+      },
+      postData: {
+        contents: JSON.stringify({
+          name: "Taro",
+        }),
+      },
+    } as unknown as GoogleAppsScript.Events.DoPost;
+
+    let token: string | undefined;
+    let body: unknown;
+
+    const app = new AppsScript()
+      .use((context, next) => {
+        if (context.invocation.type === "post") {
+          token = context.invocation.request.query("token");
+          body = context.invocation.request.json();
+        }
+
+        return next();
+      })
+      .post(() => output);
+
+    app.callPost(event);
+
+    expect(token).toBe("secret");
+    expect(body).toEqual({
+      name: "Taro",
+    });
+  });
+
+  it("RPC middlewareからfunction nameとargsを取得できる", async () => {
+    let name: string | undefined;
+    let args: readonly unknown[] | undefined;
+
+    const app = new AppsScript()
+      .use((context, next) => {
+        if (context.invocation.type === "call") {
+          name = context.invocation.name;
+          args = context.invocation.args;
+        }
+
+        return next();
+      })
+      .call("sum", (a: number, b: number) => a + b);
+
+    await app.dispatch("sum", 1, 2);
+
+    expect(name).toBe("sum");
+    expect(args).toEqual([1, 2]);
   });
 
   it("middlewareがない場合はhandlerを直接実行する", async () => {

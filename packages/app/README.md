@@ -141,9 +141,12 @@ const app = new AppsScript().calls(handlers);
 
 `.use()` で GET / POST / RPC の実行前後に共通処理を追加できます。
 
+middleware には `AppsScriptContext` と `next()` が渡されます。
+
 ```ts
 const app = new AppsScript()
-  .use((state, next) => {
+  .use((context, next) => {
+    console.log(context.invocation.type);
     console.log("before");
 
     const result = next();
@@ -163,7 +166,7 @@ middleware は登録順に実行されます。
 
 ```ts
 const app = new AppsScript()
-  .use((state, next) => {
+  .use((_context, next) => {
     console.log("middleware 1 before");
 
     const result = next();
@@ -172,7 +175,7 @@ const app = new AppsScript()
 
     return result;
   })
-  .use((state, next) => {
+  .use((_context, next) => {
     console.log("middleware 2 before");
 
     const result = next();
@@ -198,13 +201,85 @@ middleware 2 after
 middleware 1 after
 ```
 
+### Context
+
+`AppsScriptContext` から現在の State と invocation を取得できます。
+
+```ts
+app.use((context, next) => {
+  context.state;
+  context.invocation;
+
+  return next();
+});
+```
+
+同一の GET / POST / RPC 実行中は、すべての middleware で同じ Context が共有されます。
+
+### Invocation
+
+`context.invocation` は GET / POST / RPC を表す discriminated union です。
+
+```ts
+app.use((context, next) => {
+  if (context.invocation.type === "get") {
+    const token = context.invocation.request.query("token");
+
+    console.log(token);
+  }
+
+  if (context.invocation.type === "post") {
+    const token = context.invocation.request.query("token");
+    const body = context.invocation.request.json();
+
+    console.log(token);
+    console.log(body);
+  }
+
+  if (context.invocation.type === "call") {
+    console.log(context.invocation.name);
+    console.log(context.invocation.args);
+  }
+
+  return next();
+});
+```
+
+GET invocation:
+
+```ts
+type AppsScriptGetInvocation = {
+  readonly type: "get";
+  readonly request: AppsScriptHttpRequest;
+};
+```
+
+POST invocation:
+
+```ts
+type AppsScriptPostInvocation = {
+  readonly type: "post";
+  readonly request: AppsScriptPostRequest;
+};
+```
+
+RPC invocation:
+
+```ts
+type AppsScriptCallInvocation = {
+  readonly type: "call";
+  readonly name: string;
+  readonly args: readonly unknown[];
+};
+```
+
 ### Short circuit
 
 `next()` を呼ばずに値を返すことで、後続の middleware とハンドラの実行を停止できます。
 
 ```ts
 const app = new AppsScript()
-  .use((state, next) => {
+  .use((_context, next) => {
     const authenticated = false;
 
     if (!authenticated) {
@@ -245,11 +320,11 @@ type AppState = {
 const app = new AppsScript<AppState>();
 ```
 
-middleware から値を設定できます。
+middleware からは `context.state` を通して値を設定できます。
 
 ```ts
-app.use((state, next) => {
-  state.set("user", {
+app.use((context, next) => {
+  context.state.set("user", {
     id: "1",
     name: "Taro",
   });
@@ -301,13 +376,27 @@ type AuthState = {
 };
 
 export const auth = (): AppsScriptMiddleware<AuthState> => {
-  return (state, next) => {
+  return (context, next) => {
     const user = {
       id: "1",
       name: "Taro",
     };
 
-    state.set("user", user);
+    context.state.set("user", user);
+
+    return next();
+  };
+};
+```
+
+middleware は invocation 情報にもアクセスできるため、RPC 名や HTTP request に応じた認証・認可も実装できます。
+
+```ts
+export const auth = (): AppsScriptMiddleware<AuthState> => {
+  return (context, next) => {
+    if (context.invocation.type === "call") {
+      console.log(context.invocation.name);
+    }
 
     return next();
   };
@@ -438,6 +527,7 @@ TypeScript Project References は、この型共有のための必須要件で�
 - POST ハンドラ登録
 - RPC ハンドラ登録
 - middleware の登録と実行
+- GET / POST / RPC の invocation 情報を Context として middleware へ提供
 - middleware 間およびハンドラとの State 共有
 - middleware による処理の short circuit
 - GAS リクエストのラップ
