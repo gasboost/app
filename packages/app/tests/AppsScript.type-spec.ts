@@ -177,3 +177,41 @@ const callInvocation = null as unknown as AppsScriptCallInvocation;
 acceptsInvocation(getInvocation);
 acceptsInvocation(postInvocation);
 acceptsInvocation(callInvocation);
+
+type SessionState = {
+  session: {
+    userId: string;
+  };
+};
+
+type TenantState = {
+  tenant: {
+    id: string;
+  };
+};
+
+const sessionMiddleware: AppsScriptMiddleware<{}, SessionState> = (
+  context,
+  next,
+) => {
+  context.state.set("session", {
+    userId: "user-1",
+  });
+
+  return next();
+};
+
+const appWithSessionOnly = new AppsScript().use(sessionMiddleware);
+
+appWithSessionOnly.calls({
+  invalidHandler: (
+    _input: {},
+    // @ts-expect-error appはTenantStateを保証していない
+    context: AppsScriptContext<
+      SessionState & TenantState,
+      SessionState & TenantState
+    >,
+  ) => {
+    return context.state.get("tenant").id;
+  },
+});

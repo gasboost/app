@@ -43,7 +43,7 @@ type ValidRpcHandler<THandler extends RpcHandler, TContext> =
         ? THandler
         : never
       : Parameters<THandler> extends [infer TInput, infer THandlerContext]
-        ? THandlerContext extends TContext
+        ? TContext extends THandlerContext
           ? TInput extends object | undefined
             ? THandler
             : never
