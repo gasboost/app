@@ -83,7 +83,11 @@ describe("AppsScript middleware integration", () => {
 
       await app.dispatch("sum", { a: 1, b: 2 });
 
-      expect(handler).toHaveBeenCalledWith({ a: 1, b: 2 });
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler.mock.calls[0]?.[0]).toEqual({
+        a: 1,
+        b: 2,
+      });
     });
 
     it("async RPC handlerをawaitする", async () => {
@@ -162,19 +166,17 @@ describe("AppsScript middleware integration", () => {
       const output = {} as GoogleAppsScript.HTML.HtmlOutput;
       let user: string | undefined;
 
-      const app = new AppsScript<{
-        user: string;
-      }>();
+      const app = new AppsScript();
 
-      app.use((context, next) => {
-        context.state.set("user", "alice");
-        return next();
-      });
-
-      app.get(() => {
-        user = app.state.get("user");
-        return output;
-      });
+      app
+        .use<{}, { user: string }>((context, next) => {
+          context.state.set("user", "alice");
+          return next();
+        })
+        .get((_request, context) => {
+          user = context.state.get("user");
+          return output;
+        });
 
       app.callGet({} as GoogleAppsScript.Events.AppsScriptHttpRequestEvent);
 
@@ -239,13 +241,13 @@ describe("AppsScript middleware integration", () => {
         user: string;
       }>();
 
-      app.use((context, next) => {
+      app.use<{}, { user: string }>((context, next) => {
         context.state.set("user", "alice");
         return next();
       });
 
-      app.post(() => {
-        user = app.state.get("user");
+      app.post((_request, context) => {
+        user = context.state.get("user");
         return output;
       });
 

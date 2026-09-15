@@ -16,7 +16,7 @@ const app = new AppsScript<{
     id,
     createdAt: new Date(),
   }))
-  .use((context, next) => {
+  .use<{}, { user: string; authenticated: boolean }>((context, next) => {
     context.state.set("user", "alice");
     context.state.set("authenticated", true);
 
@@ -41,24 +41,6 @@ void getUserInput;
 void getUserResult;
 void sumInput;
 void sumResult;
-
-app.state.set("user", "alice");
-app.state.set("authenticated", true);
-
-const user: string | undefined = app.state.get("user");
-const authenticated: boolean | undefined = app.state.get("authenticated");
-
-void user;
-void authenticated;
-
-// @ts-expect-error 存在しないstate keyは設定できない
-app.state.set("missing", "value");
-
-// @ts-expect-error userにはstring以外を設定できない
-app.state.set("user", 123);
-
-// @ts-expect-error authenticatedにはboolean以外を設定できない
-app.state.set("authenticated", "true");
 
 // @ts-expect-error getUserの第1引数はstring
 const invalidGetUserArgs: App["getUser"]["args"] = [123];

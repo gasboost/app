@@ -203,7 +203,7 @@ middleware 1 after
 
 ### Context
 
-`AppsScriptContext` から現在の State と invocation を取得できます。
+`AppsScriptContext` から現在の invocation に紐づく State と invocation 情報を取得できます。
 
 ```ts
 app.use((context, next) => {
@@ -214,7 +214,41 @@ app.use((context, next) => {
 });
 ```
 
-同一の GET / POST / RPC 実行中は、すべての middleware で同じ Context が共有されます。
+同一の GET / POST / RPC invocation では、middleware と handler が同じ Context / State を共有します。
+
+handler でも Context を受け取れます。
+
+RPC:
+
+```ts
+app.call("getCurrentUser", (_input, context) => {
+  return context.state.get("user");
+});
+```
+
+GET:
+
+```ts
+app.get((request, context) => {
+  context.state;
+
+  return ContentService.createTextOutput(request.query("name") ?? "");
+});
+```
+
+POST:
+
+```ts
+app.post((request, context) => {
+  context.state;
+
+  return ContentService.createTextOutput(request.text());
+});
+```
+
+Context と State は invocation ごとに新しく生成されます。
+
+そのため、複数の RPC が並行実行された場合でも State は invocation 間で共有されません。
 
 ### Invocation
 
@@ -303,27 +337,29 @@ middleware は GET / POST / RPC のすべてに適用されます。
 
 ## State
 
-middleware とハンドラの間で値を共有するために `state` を利用できます。
+middleware と handler の間で invocation-scoped な値を共有するために `state` を利用できます。
 
-State の型は `AppsScript` の型引数として定義します。
+State は `AppsScript` instance に保持される共有状態ではありません。
+
+GET / POST / RPC の invocation ごとに新しい State が生成され、その invocation の middleware と handler の間だけで共有されます。
+
+middleware が後続処理に State を保証する場合は、`AppsScriptMiddleware` の input state と output state で表現します。
 
 ```ts
+import { AppsScript, type AppsScriptMiddleware } from "@gasboost/app";
+
 interface User {
   id: string;
   name: string;
 }
 
-type AppState = {
+type UserState = {
   user: User;
 };
 
-const app = new AppsScript<AppState>();
-```
+const app = new AppsScript();
 
-middleware からは `context.state` を通して値を設定できます。
-
-```ts
-app.use((context, next) => {
+app.use<{}, UserState>((context, next) => {
   context.state.set("user", {
     id: "1",
     name: "Taro",
@@ -331,37 +367,81 @@ app.use((context, next) => {
 
   return next();
 });
+
+app.call("getCurrentUser", (_input, context) => {
+  const user = context.state.get("user");
+
+  // user: User
+  return user;
+});
 ```
 
-ハンドラからは `app.state` を通して取得できます。
+middleware が保証した State は、後続 middleware / handler では `undefined` を含まない型として取得できます。
+
+複数の middleware が State を追加する場合も合成できます。
 
 ```ts
-app.call("getCurrentUser", () => {
-  return app.state.get("user");
-});
+type SessionState = {
+  session: {
+    userId: string;
+  };
+};
+
+type TenantState = {
+  tenant: {
+    id: string;
+  };
+};
+
+const sessionMiddleware: AppsScriptMiddleware<{}, SessionState> = (
+  context,
+  next,
+) => {
+  context.state.set("session", {
+    userId: "user-1",
+  });
+
+  return next();
+};
+
+const tenantMiddleware: AppsScriptMiddleware<
+  SessionState,
+  SessionState & TenantState
+> = (context, next) => {
+  const session = context.state.get("session");
+
+  context.state.set("tenant", {
+    id: `tenant-${session.userId}`,
+  });
+
+  return next();
+};
+
+const app = new AppsScript()
+  .use(sessionMiddleware)
+  .use(tenantMiddleware)
+  .call("handler", (_input, context) => {
+    const session = context.state.get("session");
+    const tenant = context.state.get("tenant");
+
+    return {
+      session,
+      tenant,
+    };
+  });
 ```
 
 State の key と value は型安全です。
 
-```ts
-app.state.set("user", {
-  id: "1",
-  name: "Taro",
-});
-
-const user = app.state.get("user");
-// User | undefined
-```
-
 存在しない key や異なる型の値は TypeScript の型エラーになります。
 
-State は logging、authentication、authorization、tracing など、middleware から後続処理へ情報を渡す用途に利用できます。
+State は authentication、authorization、logging、tracing など、middleware から後続処理へ invocation 単位の情報を渡す用途に利用できます。
 
 ## Middleware をパッケージとして提供する
 
 `AppsScriptMiddleware` は public API として利用できます。
 
-これにより、`@gasboost/auth` のような外部パッケージから `@gasboost/app` と互換性のある middleware を提供できます。
+これにより、`@gasboost/auth` のような外部パッケージから、後続 middleware / handler に State を保証する middleware を提供できます。
 
 ```ts
 import type { AppsScriptMiddleware } from "@gasboost/app";
@@ -375,7 +455,7 @@ type AuthState = {
   user: User;
 };
 
-export const auth = (): AppsScriptMiddleware<AuthState> => {
+export const auth = (): AppsScriptMiddleware<{}, AuthState> => {
   return (context, next) => {
     const user = {
       id: "1",
@@ -392,11 +472,16 @@ export const auth = (): AppsScriptMiddleware<AuthState> => {
 middleware は invocation 情報にもアクセスできるため、RPC 名や HTTP request に応じた認証・認可も実装できます。
 
 ```ts
-export const auth = (): AppsScriptMiddleware<AuthState> => {
+export const auth = (): AppsScriptMiddleware<{}, AuthState> => {
   return (context, next) => {
     if (context.invocation.type === "call") {
       console.log(context.invocation.name);
     }
+
+    context.state.set("user", {
+      id: "1",
+      name: "Taro",
+    });
 
     return next();
   };
@@ -409,21 +494,19 @@ export const auth = (): AppsScriptMiddleware<AuthState> => {
 import { AppsScript } from "@gasboost/app";
 import { auth } from "@gasboost/auth";
 
-type AppState = {
-  user: {
-    id: string;
-    name: string;
-  };
-};
-
-const app = new AppsScript<AppState>()
+const app = new AppsScript()
   .use(auth())
-  .call("getCurrentUser", () => {
-    return app.state.get("user");
+  .call("getCurrentUser", (_input, context) => {
+    const user = context.state.get("user");
+
+    // user: User
+    return user;
   });
 ```
 
-これにより、認証などの個別機能を `@gasboost/app` 本体へ組み込まず、独立した middleware パッケージとして提供できます。
+`auth()` が `AuthState` を保証しているため、後続 handler の `context.state.get("user")` は `User | undefined` ではなく `User` として推論されます。
+
+これにより、認証などの個別機能を `@gasboost/app` 本体へ組み込まず、型安全な独立 middleware パッケージとして提供できます。
 
 ## InferAppsScript
 

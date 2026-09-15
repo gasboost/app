@@ -3,7 +3,17 @@ import type { StateMap } from "./AppsScriptState";
 
 type Next = () => unknown;
 
-export type AppsScriptMiddleware<TState extends StateMap> = (
-  context: AppsScriptContext<TState>,
+declare const middlewareInputState: unique symbol;
+declare const middlewareOutputState: unique symbol;
+
+export type AppsScriptMiddleware<
+  TInputState extends StateMap = {},
+  TOutputState extends TInputState = TInputState,
+> = ((
+  context: AppsScriptContext<TInputState & TOutputState, TInputState>,
   next: Next,
-) => unknown;
+) => unknown) & {
+  readonly [middlewareInputState]?: (state: TInputState) => TInputState;
+
+  readonly [middlewareOutputState]?: (state: TOutputState) => TOutputState;
+};

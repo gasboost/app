@@ -124,7 +124,7 @@ describe("AppsScript middleware", () => {
     const app = new AppsScript<{
       user: string;
     }>()
-      .use((context, next) => {
+      .use<{}, { user: string }>((context, next) => {
         context.state.set("user", "alice");
         return next();
       })
@@ -145,12 +145,12 @@ describe("AppsScript middleware", () => {
     const app = new AppsScript<{
       user: string;
     }>()
-      .use((context, next) => {
+      .use<{}, { user: string }>((context, next) => {
         context.state.set("user", "alice");
         return next();
       })
-      .call("test", (_input: {}) => {
-        receivedUser = app.state.get("user");
+      .call("test", (_input: {}, context) => {
+        receivedUser = context.state.get("user");
         return "ok";
       });
 
@@ -165,15 +165,15 @@ describe("AppsScript middleware", () => {
     const app = new AppsScript<{
       user: string;
     }>()
-      .use((context, next) => {
+      .use<{}, { user: string }>((context, next) => {
         const result = next();
 
         receivedUser = context.state.get("user");
 
         return result;
       })
-      .call("test", (_input: {}) => {
-        app.state.set("user", "alice");
+      .call("test", (_input: {}, context) => {
+        context.state.set("user", "alice");
         return "ok";
       });
 
