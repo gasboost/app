@@ -11,12 +11,12 @@ const app = new AppsScript()
       marker: "POST_RESULT",
     } as never;
   })
-  .call("getUser", async (id: string) => {
+  .call("getUser", async (input: { id: string }) => {
     return {
-      id,
+      id: input.id,
       name: "Taro",
     };
   })
-  .call("sum", (a: number, b: number) => a + b);
+  .call("sum", (input: { a: number; b: number }) => input.a + input.b);
 
 export default app;

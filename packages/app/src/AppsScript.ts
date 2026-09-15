@@ -18,6 +18,26 @@ type DoPostHandler = (
 type RpcHandler = (...args: any[]) => any;
 type RpcMap = Record<string, RpcHandler>;
 
+type RpcInput<THandler extends RpcHandler> =
+  Parameters<THandler> extends []
+    ? undefined
+    : Parameters<THandler> extends [infer TInput]
+      ? TInput
+      : never;
+
+type ValidRpcHandler<THandler extends RpcHandler> =
+  Parameters<THandler> extends []
+    ? THandler
+    : Parameters<THandler> extends [infer TInput]
+      ? TInput extends object
+        ? THandler
+        : never
+      : never;
+
+type ValidRpcHandlers<THandlers extends RpcMap> = {
+  [K in keyof THandlers]: ValidRpcHandler<THandlers[K]>;
+};
+
 export type AppsScriptDescription = {
   readonly hasGet: boolean;
   readonly hasPost: boolean;
@@ -59,20 +79,30 @@ export class AppsScript<
     return this;
   }
 
-  public call<TName extends string, THandler extends RpcHandler>(
+  public call<TName extends string, TResult>(
     name: TName,
-    handler: THandler,
-  ): AppsScript<TState, TFunctions & Record<TName, THandler>> {
+    handler: () => TResult,
+  ): AppsScript<TState, TFunctions & Record<TName, () => TResult>>;
+
+  public call<TName extends string, TInput extends object, TResult>(
+    name: TName,
+    handler: (input: TInput) => TResult,
+  ): AppsScript<TState, TFunctions & Record<TName, (input: TInput) => TResult>>;
+
+  public call(
+    name: string,
+    handler: RpcHandler,
+  ): AppsScript<TState, TFunctions> {
     if (this.functions[name]) {
       throw new Error(`Function ${name} is already registered.`);
     }
 
     this.functions[name] = handler;
 
-    (globalThis as Record<string, unknown>)[name] = (...args: unknown[]) =>
-      this.dispatch(name, ...args);
+    (globalThis as Record<string, unknown>)[name] = (input?: unknown) =>
+      this.dispatch(name, input);
 
-    return this as AppsScript<TState, TFunctions & Record<TName, THandler>>;
+    return this;
   }
 
   public callGet(event: GoogleAppsScript.Events.AppsScriptHttpRequestEvent) {
@@ -107,7 +137,7 @@ export class AppsScript<
     );
   }
 
-  public async dispatch(name: string, ...args: unknown[]) {
+  public async dispatch(name: string, input?: unknown) {
     const handler = this.functions[name];
 
     if (!handler) {
@@ -118,9 +148,9 @@ export class AppsScript<
       {
         type: "call",
         name,
-        args,
+        input,
       },
-      () => handler(...args),
+      () => (input === undefined ? handler() : handler(input)),
     );
 
     return new AppsScriptResponse(result);
@@ -159,10 +189,10 @@ export class AppsScript<
   }
 
   public calls<THandlers extends RpcMap>(
-    handlers: THandlers,
+    handlers: THandlers & ValidRpcHandlers<THandlers>,
   ): AppsScript<TState, TFunctions & THandlers> {
     for (const [name, handler] of Object.entries(handlers)) {
-      this.call(name, handler);
+      this.call(name, handler as () => unknown);
     }
 
     return this as AppsScript<TState, TFunctions & THandlers>;
@@ -189,7 +219,7 @@ export type InferAppsScript<T> =
   T extends AppsScript<infer TState, infer TFunctions>
     ? {
         [K in keyof TFunctions]: {
-          args: Parameters<TFunctions[K]>;
+          input: RpcInput<TFunctions[K]>;
           result: JsonParsed<Awaited<ReturnType<TFunctions[K]>>>;
         };
       }

@@ -27,7 +27,7 @@ describe("FetchTransport", () => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        args: [1, 2],
+        input: [1, 2],
       }),
     });
   });
@@ -49,7 +49,7 @@ describe("FetchTransport", () => {
 
     const transport = new FetchTransport({ endpoint: "/__gasboost" });
 
-    await expect(transport.call("getUser", ["user-1"])).resolves.toEqual({
+    await expect(transport.call("getUser", { id: "user-1" })).resolves.toEqual({
       contents: JSON.stringify({
         id: "user-1",
         name: "Taro",

@@ -5,7 +5,7 @@ import type { GasboostOptions } from "./gasboost";
 import { installGasRuntime } from "./runtime";
 
 type RpcRequestBody = {
-  args: unknown[];
+  input: unknown | undefined;
 };
 
 class InvalidRpcRequestError extends Error {
@@ -124,7 +124,7 @@ export function appsScriptClient(options = {}) {
         }
 
         try {
-          const { args } = await readRequest(request);
+          const { input } = await readRequest(request);
 
           const environment = server.environments.ssr;
 
@@ -138,7 +138,7 @@ export function appsScriptClient(options = {}) {
 
           const result = await module.default.dispatch(
             decodeURIComponent(rpcName),
-            ...args,
+            input,
           );
 
           response.statusCode = 200;
@@ -209,7 +209,7 @@ function readRequest(request: IncomingMessage): Promise<RpcRequestBody> {
 
       if (!raw) {
         resolve({
-          args: [],
+          input: undefined,
         });
         return;
       }
@@ -227,22 +227,17 @@ function readRequest(request: IncomingMessage): Promise<RpcRequestBody> {
         return;
       }
 
-      if (
-        typeof body !== "object" ||
-        body === null ||
-        !("args" in body) ||
-        !Array.isArray(body.args)
-      ) {
+      if (typeof body !== "object" || body === null || Array.isArray(body)) {
         reject(
           new InvalidRpcRequestError(
-            "Invalid RPC request body. Expected { args: unknown[] }.",
+            "Invalid RPC request body. Expected an object.",
           ),
         );
         return;
       }
 
       resolve({
-        args: body.args,
+        input: "input" in body ? body.input : undefined,
       });
     });
   });

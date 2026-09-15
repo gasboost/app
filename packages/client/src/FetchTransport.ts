@@ -19,7 +19,7 @@ export class FetchTransport implements Transport {
     this.endpoint = endpoint;
   }
 
-  public async call(name: string, args: unknown[]): Promise<RpcResponse> {
+  public async call(name: string, input?: unknown): Promise<RpcResponse> {
     const response = await fetch(
       `${this.endpoint}/${encodeURIComponent(name)}`,
       {
@@ -27,9 +27,13 @@ export class FetchTransport implements Transport {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          args,
-        }),
+        body: JSON.stringify(
+          input === undefined
+            ? {}
+            : {
+                input,
+              },
+        ),
       },
     );
 

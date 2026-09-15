@@ -131,6 +131,7 @@ function configureDevServer(plugin: Plugin, server: ViteDevServer) {
 
   configureServer.handler.call(context, server);
 }
+
 describe("gasboost dev", () => {
   test("POST RPCを実行できる", async () => {
     const dispatch = vi.fn(async () => ({
@@ -147,9 +148,14 @@ describe("gasboost dev", () => {
 
     configureDevServer(dev, server as unknown as ViteDevServer);
 
+    const input = {
+      a: 1,
+      b: 2,
+    };
+
     const request = createRequest({
       body: {
-        args: [1, 2],
+        input,
       },
     });
 
@@ -161,7 +167,7 @@ describe("gasboost dev", () => {
 
     expect(importModule).toHaveBeenCalledWith("src/server.ts");
 
-    expect(dispatch).toHaveBeenCalledWith("sum", 1, 2);
+    expect(dispatch).toHaveBeenCalledWith("sum", input);
 
     expect(response.statusCode).toBe(200);
 
@@ -170,7 +176,7 @@ describe("gasboost dev", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  test("複数argsをRPC handlerへ渡せる", async () => {
+  test("object inputをRPC handlerへ渡せる", async () => {
     const dispatch = vi.fn(async () => ({
       contents: JSON.stringify("ok"),
     }));
@@ -185,17 +191,18 @@ describe("gasboost dev", () => {
 
     configureDevServer(dev, server as unknown as ViteDevServer);
 
+    const input = {
+      id: "123",
+      enabled: true,
+      nested: {
+        value: 4,
+      },
+    };
+
     const request = createRequest({
       url: "/__gasboost/example",
       body: {
-        args: [
-          1,
-          "two",
-          true,
-          {
-            value: 4,
-          },
-        ],
+        input,
       },
     });
 
@@ -203,9 +210,7 @@ describe("gasboost dev", () => {
 
     await middleware()(request, response, vi.fn());
 
-    expect(dispatch).toHaveBeenCalledWith("example", 1, "two", true, {
-      value: 4,
-    });
+    expect(dispatch).toHaveBeenCalledWith("example", input);
   });
 
   test("async RPCを実行できる", async () => {
@@ -229,9 +234,7 @@ describe("gasboost dev", () => {
 
     const request = createRequest({
       url: "/__gasboost/async",
-      body: {
-        args: [],
-      },
+      body: {},
     });
 
     const { response, body } = createResponse();
@@ -263,9 +266,7 @@ describe("gasboost dev", () => {
 
     const request = createRequest({
       url: "/__gasboost/getData",
-      body: {
-        args: [],
-      },
+      body: {},
     });
 
     const { response, body } = createResponse();
@@ -401,7 +402,7 @@ describe("gasboost dev", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  test("空bodyではargsなしでRPCを実行する", async () => {
+  test("空bodyではinputなしでRPCを実行する", async () => {
     const dispatch = vi.fn(async () => ({
       contents: JSON.stringify("ok"),
     }));
@@ -417,7 +418,7 @@ describe("gasboost dev", () => {
     configureDevServer(dev, server as unknown as ViteDevServer);
 
     const request = createRequest({
-      url: "/__gasboost/noArgs",
+      url: "/__gasboost/noInput",
       body: undefined,
     });
 
@@ -425,10 +426,37 @@ describe("gasboost dev", () => {
 
     await middleware()(request, response, vi.fn());
 
-    expect(dispatch).toHaveBeenCalledWith("noArgs");
+    expect(dispatch).toHaveBeenCalledWith("noInput", undefined);
   });
 
-  test("argsが配列でないbodyはエラーを返す", async () => {
+  test("空objectではinputなしでRPCを実行する", async () => {
+    const dispatch = vi.fn(async () => ({
+      contents: JSON.stringify("ok"),
+    }));
+
+    const { dev } = gasboost({
+      entry: "src/server.ts",
+    });
+
+    const { server, middleware } = createServer({
+      dispatch,
+    });
+
+    configureDevServer(dev, server as unknown as ViteDevServer);
+
+    const request = createRequest({
+      url: "/__gasboost/noInput",
+      body: {},
+    });
+
+    const { response } = createResponse();
+
+    await middleware()(request, response, vi.fn());
+
+    expect(dispatch).toHaveBeenCalledWith("noInput", undefined);
+  });
+
+  test("bodyがobjectでなければ400を返す", async () => {
     const dispatch = vi.fn();
 
     const { dev } = gasboost({
@@ -442,9 +470,7 @@ describe("gasboost dev", () => {
     configureDevServer(dev, server as unknown as ViteDevServer);
 
     const request = createRequest({
-      body: {
-        args: "invalid",
-      },
+      body: "invalid",
     });
 
     const { response, body } = createResponse();
@@ -456,7 +482,7 @@ describe("gasboost dev", () => {
     expect(JSON.parse(body())).toMatchObject({
       error: {
         name: "InvalidRpcRequestError",
-        message: "Invalid RPC request body. Expected { args: unknown[] }.",
+        message: "Invalid RPC request body. Expected an object.",
       },
     });
 
@@ -480,9 +506,7 @@ describe("gasboost dev", () => {
 
     const request = createRequest({
       url: "/__gasboost/unknown",
-      body: {
-        args: [],
-      },
+      body: {},
     });
 
     const { response, body } = createResponse();
@@ -516,9 +540,7 @@ describe("gasboost dev", () => {
 
     const request = createRequest({
       url: "/__gasboost/fail",
-      body: {
-        args: [],
-      },
+      body: {},
     });
 
     const { response, body } = createResponse();
@@ -550,10 +572,14 @@ describe("gasboost dev", () => {
 
     configureDevServer(dev, server as unknown as ViteDevServer);
 
+    const input = {
+      name: "Taro",
+    };
+
     const request = createRequest({
       url: "/__gasboost/hello?foo=bar",
       body: {
-        args: ["Taro"],
+        input,
       },
     });
 
@@ -561,7 +587,7 @@ describe("gasboost dev", () => {
 
     await middleware()(request, response, vi.fn());
 
-    expect(dispatch).toHaveBeenCalledWith("hello", "Taro");
+    expect(dispatch).toHaveBeenCalledWith("hello", input);
   });
 
   test("URL encoded RPC名をdecodeする", async () => {
@@ -581,16 +607,14 @@ describe("gasboost dev", () => {
 
     const request = createRequest({
       url: "/__gasboost/hello%20world",
-      body: {
-        args: [],
-      },
+      body: {},
     });
 
     const { response } = createResponse();
 
     await middleware()(request, response, vi.fn());
 
-    expect(dispatch).toHaveBeenCalledWith("hello world");
+    expect(dispatch).toHaveBeenCalledWith("hello world", undefined);
   });
 
   test("RPCごとにserver entryをssrLoadModuleする", async () => {
@@ -612,10 +636,8 @@ describe("gasboost dev", () => {
 
     await middleware()(
       createRequest({
-        url: "/__gasboost/one",
-        body: {
-          args: [],
-        },
+        url: "/__gasboost/first",
+        body: {},
       }),
       response1,
       vi.fn(),
@@ -625,10 +647,8 @@ describe("gasboost dev", () => {
 
     await middleware()(
       createRequest({
-        url: "/__gasboost/two",
-        body: {
-          args: [],
-        },
+        url: "/__gasboost/second",
+        body: {},
       }),
       response2,
       vi.fn(),
@@ -637,7 +657,6 @@ describe("gasboost dev", () => {
     expect(importModule).toHaveBeenCalledTimes(2);
 
     expect(importModule).toHaveBeenNthCalledWith(1, "src/server.ts");
-
     expect(importModule).toHaveBeenNthCalledWith(2, "src/server.ts");
   });
 });

@@ -69,21 +69,21 @@ describe("AppsScript middleware integration", () => {
           return "hello";
         });
 
-      await app.dispatch("hello");
+      await app.dispatch("hello", {});
 
       expect(order).toEqual(["middleware", "handler"]);
     });
 
     it("RPC handlerに引数をそのまま渡す", async () => {
-      const handler = vi.fn((a: number, b: number) => a + b);
+      const handler = vi.fn(({ a, b }: { a: number; b: number }) => a + b);
 
       const app = new AppsScript()
         .use((_context, next) => next())
         .call("sum", handler);
 
-      await app.dispatch("sum", 1, 2);
+      await app.dispatch("sum", { a: 1, b: 2 });
 
-      expect(handler).toHaveBeenCalledWith(1, 2);
+      expect(handler).toHaveBeenCalledWith({ a: 1, b: 2 });
     });
 
     it("async RPC handlerをawaitする", async () => {
@@ -93,7 +93,7 @@ describe("AppsScript middleware integration", () => {
           return "hello";
         });
 
-      const response = await app.dispatch("hello");
+      const response = await app.dispatch("hello", {});
 
       expect(response).toBeInstanceOf(AppsScriptResponse);
     });
@@ -103,7 +103,7 @@ describe("AppsScript middleware integration", () => {
         .use((_context, next) => next())
         .call("hello", () => "hello");
 
-      const response = await app.dispatch("hello");
+      const response = await app.dispatch("hello", {});
 
       expect(response).toBeInstanceOf(AppsScriptResponse);
     });
@@ -113,7 +113,7 @@ describe("AppsScript middleware integration", () => {
 
       const app = new AppsScript().use(() => "blocked").call("hello", handler);
 
-      const response = await app.dispatch("hello");
+      const response = await app.dispatch("hello", {});
 
       expect(handler).not.toHaveBeenCalled();
       expect(response).toBeInstanceOf(AppsScriptResponse);
@@ -122,7 +122,7 @@ describe("AppsScript middleware integration", () => {
     it("未登録RPCはエラーになる", async () => {
       const app = new AppsScript().use((_context, next) => next());
 
-      await expect(app.dispatch("missing")).rejects.toThrow(
+      await expect(app.dispatch("missing", {})).rejects.toThrow(
         "Function missing is not registered.",
       );
     });

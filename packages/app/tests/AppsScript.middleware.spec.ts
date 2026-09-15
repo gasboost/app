@@ -14,12 +14,12 @@ describe("AppsScript middleware", () => {
         order.push("middleware2");
         return next();
       })
-      .call("test", () => {
+      .call("test", (_input: {}) => {
         order.push("handler");
         return "ok";
       });
 
-    await app.dispatch("test");
+    await app.dispatch("test", {});
 
     expect(order).toEqual(["middleware1", "middleware2", "handler"]);
   });
@@ -46,12 +46,12 @@ describe("AppsScript middleware", () => {
 
         return result;
       })
-      .call("test", () => {
+      .call("test", (_input: {}) => {
         order.push("handler");
         return "ok";
       });
 
-    await app.dispatch("test");
+    await app.dispatch("test", {});
 
     expect(order).toEqual([
       "middleware1 before",
@@ -64,14 +64,14 @@ describe("AppsScript middleware", () => {
 
   it("middlewareがnextを呼ばない場合は後続middlewareとhandlerを実行しない", async () => {
     const middleware2 = vi.fn((_context, next) => next());
-    const handler = vi.fn(() => "handler");
+    const handler = vi.fn((_input: {}) => "handler");
 
     const app = new AppsScript()
       .use(() => "blocked")
       .use(middleware2)
       .call("test", handler);
 
-    await app.dispatch("test");
+    await app.dispatch("test", {});
 
     expect(middleware2).not.toHaveBeenCalled();
     expect(handler).not.toHaveBeenCalled();
@@ -85,9 +85,9 @@ describe("AppsScript middleware", () => {
         resultFromNext = next();
         return resultFromNext;
       })
-      .call("test", () => "handler-result");
+      .call("test", (_input: {}) => "handler-result");
 
-    await app.dispatch("test");
+    await app.dispatch("test", {});
 
     expect(resultFromNext).toBe("handler-result");
   });
@@ -98,9 +98,9 @@ describe("AppsScript middleware", () => {
         next();
         return "middleware-result";
       })
-      .call("test", () => "handler-result");
+      .call("test", (_input: {}) => "handler-result");
 
-    const response = await app.dispatch("test");
+    const response = await app.dispatch("test", {});
 
     expect(response.contents).toBe(JSON.stringify("middleware-result"));
   });
@@ -111,9 +111,9 @@ describe("AppsScript middleware", () => {
         next();
         return next();
       })
-      .call("test", () => "ok");
+      .call("test", (_input: {}) => "ok");
 
-    await expect(app.dispatch("test")).rejects.toThrow(
+    await expect(app.dispatch("test", {})).rejects.toThrow(
       "next() called multiple times.",
     );
   });
@@ -132,9 +132,9 @@ describe("AppsScript middleware", () => {
         receivedUser = context.state.get("user");
         return next();
       })
-      .call("test", () => "ok");
+      .call("test", (_input: {}) => "ok");
 
-    await app.dispatch("test");
+    await app.dispatch("test", {});
 
     expect(receivedUser).toBe("alice");
   });
@@ -149,12 +149,12 @@ describe("AppsScript middleware", () => {
         context.state.set("user", "alice");
         return next();
       })
-      .call("test", () => {
+      .call("test", (_input: {}) => {
         receivedUser = app.state.get("user");
         return "ok";
       });
 
-    await app.dispatch("test");
+    await app.dispatch("test", {});
 
     expect(receivedUser).toBe("alice");
   });
@@ -172,12 +172,12 @@ describe("AppsScript middleware", () => {
 
         return result;
       })
-      .call("test", () => {
+      .call("test", (_input: {}) => {
         app.state.set("user", "alice");
         return "ok";
       });
 
-    await app.dispatch("test");
+    await app.dispatch("test", {});
 
     expect(receivedUser).toBe("alice");
   });
@@ -194,9 +194,9 @@ describe("AppsScript middleware", () => {
         contexts.push(context);
         return next();
       })
-      .call("test", () => "ok");
+      .call("test", (_input: {}) => "ok");
 
-    await app.dispatch("test");
+    await app.dispatch("test", {});
 
     expect(contexts).toHaveLength(2);
     expect(contexts[0]).toBe(contexts[1]);
@@ -270,33 +270,39 @@ describe("AppsScript middleware", () => {
     });
   });
 
-  it("RPC middlewareからfunction nameとargsを取得できる", async () => {
+  it("RPC middlewareからfunction nameとinputを取得できる", async () => {
     let name: string | undefined;
-    let args: readonly unknown[] | undefined;
+    let input: unknown;
 
     const app = new AppsScript()
       .use((context, next) => {
         if (context.invocation.type === "call") {
           name = context.invocation.name;
-          args = context.invocation.args;
+          input = context.invocation.input;
         }
 
         return next();
       })
-      .call("sum", (a: number, b: number) => a + b);
+      .call("updateUser", (input: { userId: string; name: string }) => input);
 
-    await app.dispatch("sum", 1, 2);
+    await app.dispatch("updateUser", {
+      userId: "123",
+      name: "Taro",
+    });
 
-    expect(name).toBe("sum");
-    expect(args).toEqual([1, 2]);
+    expect(name).toBe("updateUser");
+    expect(input).toEqual({
+      userId: "123",
+      name: "Taro",
+    });
   });
 
   it("middlewareがない場合はhandlerを直接実行する", async () => {
-    const handler = vi.fn(() => "ok");
+    const handler = vi.fn((_input: {}) => "ok");
 
     const app = new AppsScript().call("test", handler);
 
-    await app.dispatch("test");
+    await app.dispatch("test", {});
 
     expect(handler).toHaveBeenCalledOnce();
   });

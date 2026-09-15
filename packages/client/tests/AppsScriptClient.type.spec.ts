@@ -3,26 +3,54 @@ import { appsScriptClient } from "../src/AppsScriptClient";
 
 type App = {
   sum: {
-    args: [a: number, b: number];
+    input: {
+      a: number;
+      b: number;
+    };
     result: number;
   };
 
   findUser: {
-    args: [id: string];
+    input: {
+      id: string;
+    };
     result: {
       id: string;
       name: string;
     };
   };
+
+  getDate: {
+    input: undefined;
+    result: {
+      createdAt: string;
+    };
+  };
 };
 
 describe("AppsScriptClient types", () => {
-  it("RPCの引数と戻り値を保持する", () => {
+  it("inputありRPCのinputと戻り値を保持する", () => {
     const { client } = appsScriptClient<App>();
 
-    expectTypeOf(client.sum).parameter(0).toEqualTypeOf<number>();
-    expectTypeOf(client.sum).parameter(1).toEqualTypeOf<number>();
+    expectTypeOf(client.sum).parameters.toEqualTypeOf<
+      [
+        input: {
+          a: number;
+          b: number;
+        },
+      ]
+    >();
+
     expectTypeOf(client.sum).returns.toEqualTypeOf<Promise<number>>();
+
+    expectTypeOf(client.findUser).parameters.toEqualTypeOf<
+      [
+        input: {
+          id: string;
+        },
+      ]
+    >();
+
     expectTypeOf(client.findUser).returns.toEqualTypeOf<
       Promise<{
         id: string;
@@ -31,15 +59,12 @@ describe("AppsScriptClient types", () => {
     >();
   });
 
-  it("RPCの戻り値型を保持する", () => {
+  it("inputがundefinedなら0引数RPCになる", () => {
     const { client } = appsScriptClient<App>();
 
-    expectTypeOf(client.sum).returns.toEqualTypeOf<Promise<number>>();
-
-    expectTypeOf(client.findUser).returns.toEqualTypeOf<
+    expectTypeOf(client.getDate).returns.toEqualTypeOf<
       Promise<{
-        id: string;
-        name: string;
+        createdAt: string;
       }>
     >();
   });

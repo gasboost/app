@@ -4,36 +4,42 @@ import { AppsScriptResponse } from "../src/AppsScriptResponse";
 
 test("InferAppsScriptでRPC契約を推論できる", () => {
   const app = new AppsScript()
-    .call("getUser", async (id: string) => ({
-      id,
+    .call("getUser", async (input: { id: string }) => ({
+      id: input.id,
       name: "Taro",
     }))
-    .call("saveUser", async (name: string, age: number) => ({
-      name,
-      age,
+    .call("saveUser", async (input: { name: string; age: number }) => ({
+      name: input.name,
+      age: input.age,
     }));
 
   type Rpc = InferAppsScript<typeof app>;
 
-  expectTypeOf<Rpc["getUser"]["args"]>().toEqualTypeOf<[id: string]>();
+  expectTypeOf<Rpc["getUser"]["input"]>().toEqualTypeOf<{
+    id: string;
+  }>();
 
   expectTypeOf<Rpc["getUser"]["result"]>().toEqualTypeOf<{
     id: string;
     name: string;
   }>();
 
-  expectTypeOf<Rpc["saveUser"]["args"]>().toEqualTypeOf<
-    [name: string, age: number]
-  >();
+  expectTypeOf<Rpc["saveUser"]["input"]>().toEqualTypeOf<{
+    name: string;
+    age: number;
+  }>();
 });
 
 test("callでRPC handlerを登録してdispatchできる", async () => {
   const app = new AppsScript().call(
     "sum",
-    async (a: number, b: number) => a + b,
+    async (input: { a: number; b: number }) => input.a + input.b,
   );
 
-  const response = await app.dispatch("sum", 1, 2);
+  const response = await app.dispatch("sum", {
+    a: 1,
+    b: 2,
+  });
 
   expect(response).toBeInstanceOf(AppsScriptResponse);
   expect(response.contents).toBe("3");
@@ -101,7 +107,7 @@ test("POST eventのtextとjsonを取得できる", () => {
 });
 
 test("InferAppsScriptでDateがstringに変換される", () => {
-  const app = new AppsScript().call("getUser", () => ({
+  const app = new AppsScript().call("getUser", (_input: {}) => ({
     id: "1",
     createdAt: new Date(),
   }));
@@ -115,7 +121,7 @@ test("InferAppsScriptでDateがstringに変換される", () => {
 });
 
 test("InferAppsScriptでネストしたDateもstringに変換される", () => {
-  const app = new AppsScript().call("getUsers", () => ({
+  const app = new AppsScript().call("getUsers", (_input: {}) => ({
     users: [
       {
         createdAt: new Date(),
@@ -134,12 +140,18 @@ test("InferAppsScriptでネストしたDateもstringに変換される", () => {
 
 test("callsで複数のRPC handlerを登録してdispatchできる", async () => {
   const app = new AppsScript().calls({
-    add: (a: number, b: number) => a + b,
-    greet: (name: string) => `Hello, ${name}`,
+    add: (input: { a: number; b: number }) => input.a + input.b,
+    greet: (input: { name: string }) => `Hello, ${input.name}`,
   });
 
-  const addResponse = await app.dispatch("add", 1, 2);
-  const greetResponse = await app.dispatch("greet", "Taro");
+  const addResponse = await app.dispatch("add", {
+    a: 1,
+    b: 2,
+  });
+
+  const greetResponse = await app.dispatch("greet", {
+    name: "Taro",
+  });
 
   expect(addResponse.contents).toBe("3");
   expect(greetResponse.contents).toBe('"Hello, Taro"');
@@ -147,23 +159,23 @@ test("callsで複数のRPC handlerを登録してdispatchできる", async () =>
 
 test("callとcallsを混在してRPC handlerを登録できる", async () => {
   const app = new AppsScript()
-    .call("first", () => "first")
+    .call("first", (_input: {}) => "first")
     .calls({
-      second: () => "second",
-      third: () => "third",
+      second: (_input: {}) => "second",
+      third: (_input: {}) => "third",
     });
 
-  expect((await app.dispatch("first")).contents).toBe('"first"');
-  expect((await app.dispatch("second")).contents).toBe('"second"');
-  expect((await app.dispatch("third")).contents).toBe('"third"');
+  expect((await app.dispatch("first", {})).contents).toBe('"first"');
+  expect((await app.dispatch("second", {})).contents).toBe('"second"');
+  expect((await app.dispatch("third", {})).contents).toBe('"third"');
 });
 
 test("callsでも既存callと同じ重複登録エラーになる", () => {
   expect(() =>
     new AppsScript()
-      .call("duplicate", () => 1)
+      .call("duplicate", (_input: {}) => 1)
       .calls({
-        duplicate: () => 2,
+        duplicate: (_input: {}) => 2,
       }),
   ).toThrow("Function duplicate is already registered.");
 });
@@ -171,8 +183,8 @@ test("callsでも既存callと同じ重複登録エラーになる", () => {
 test("describeで登録状態を取得できる", () => {
   const app = new AppsScript()
     .get(() => ({}) as GoogleAppsScript.HTML.HtmlOutput)
-    .call("getUser", () => ({ id: "1" }))
-    .call("saveUser", () => undefined);
+    .call("getUser", (_input: {}) => ({ id: "1" }))
+    .call("saveUser", (_input: {}) => undefined);
 
   expect(app.describe()).toEqual({
     hasGet: true,
@@ -183,8 +195,8 @@ test("describeで登録状態を取得できる", () => {
 
 test("describeでcallsによる登録も取得できる", () => {
   const app = new AppsScript().calls({
-    signIn: () => undefined,
-    signOut: () => undefined,
+    signIn: (_input: {}) => undefined,
+    signOut: (_input: {}) => undefined,
   });
 
   expect(app.describe()).toEqual({
