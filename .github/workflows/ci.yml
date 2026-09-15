@@ -99,18 +99,21 @@ jobs:
           const app = new AppsScript()
             .call(
               "sum",
-              (a: number, b: number) => a + b,
+              (input: { a: number; b: number }) =>
+                input.a + input.b,
             );
 
           type AppType =
             InferAppsScript<typeof app>;
 
-          const args: AppType["sum"]["args"] =
-            [1, 2];
+          const input: AppType["sum"]["input"] = {
+            a: 1,
+            b: 2,
+          };
 
           console.log(
             typeof AppsScript,
-            args,
+            input,
           );
           EOF
 
@@ -179,7 +182,8 @@ jobs:
             })
             .call(
               "sum",
-              (a: number, b: number) => a + b,
+              (input: { a: number; b: number }) =>
+                input.a + input.b,
             );
 
           export default app;
@@ -246,18 +250,19 @@ jobs:
 
           cat > src/server.ts <<'EOF'
           import {
-          AppsScript,
-          type InferAppsScript,
+            AppsScript,
+            type InferAppsScript,
           } from "@gasboost/app";
 
           const app = new AppsScript()
-          .call(
+            .call(
               "sum",
-              (a: number, b: number) => a + b,
-          );
+              (input: { a: number; b: number }) =>
+                input.a + input.b,
+            );
 
           export type AppType =
-          InferAppsScript<typeof app>;
+            InferAppsScript<typeof app>;
           EOF
 
           cat > src/main.ts <<'EOF'
@@ -265,13 +270,16 @@ jobs:
           import type { AppType } from "./server";
 
           const { client } =
-          appsScriptClient<AppType>();
+            appsScriptClient<AppType>();
 
           if (false) {
-          const result: Promise<number> =
-              client.sum(1, 2);
+            const result: Promise<number> =
+              client.sum({
+                a: 1,
+                b: 2,
+              });
 
-          void result;
+            void result;
           }
 
           console.log(typeof client);
