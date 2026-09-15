@@ -132,6 +132,8 @@ export function appsScriptClient(options = {}) {
             throw new Error("Vite SSR environment is not runnable.");
           }
 
+          environment.runner.clearCache();
+
           const module = (await environment.runner.import(options.entry)) as {
             default: AppsScript;
           };
