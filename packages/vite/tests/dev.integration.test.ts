@@ -17,6 +17,10 @@ vi.mock("vite", async (importOriginal) => {
   };
 });
 
+type TestApp = {
+  dispatch: ReturnType<typeof vi.fn>;
+};
+
 function createRequest({
   method = "POST",
   url = "/__gasboost/sum",
@@ -64,7 +68,7 @@ function createResponse() {
   };
 }
 
-function createServer(app: { dispatch: ReturnType<typeof vi.fn> }) {
+function createServer(app: TestApp | (() => TestApp)) {
   let middleware:
     | ((
         request: IncomingMessage,
@@ -73,9 +77,27 @@ function createServer(app: { dispatch: ReturnType<typeof vi.fn> }) {
       ) => void | Promise<void>)
     | undefined;
 
-  const importModule = vi.fn(async () => ({
-    default: app,
-  }));
+  let cachedModule:
+    | {
+        default: TestApp;
+      }
+    | undefined;
+
+  const createApp = typeof app === "function" ? app : () => app;
+
+  const clearCache = vi.fn(() => {
+    cachedModule = undefined;
+  });
+
+  const importModule = vi.fn(async () => {
+    if (!cachedModule) {
+      cachedModule = {
+        default: createApp(),
+      };
+    }
+
+    return cachedModule;
+  });
 
   const server = {
     middlewares: {
@@ -95,6 +117,7 @@ function createServer(app: { dispatch: ReturnType<typeof vi.fn> }) {
     environments: {
       ssr: {
         runner: {
+          clearCache,
           import: importModule,
         },
       },
@@ -103,6 +126,7 @@ function createServer(app: { dispatch: ReturnType<typeof vi.fn> }) {
 
   return {
     server,
+    clearCache,
     importModule,
 
     middleware() {
@@ -617,7 +641,7 @@ describe("gasboost dev", () => {
     expect(dispatch).toHaveBeenCalledWith("hello world", undefined);
   });
 
-  test("RPCごとにserver entryをssrLoadModuleする", async () => {
+  test("RPCごとにmodule cacheを破棄してserver entryを再評価する", async () => {
     const dispatch = vi.fn(async () => ({
       contents: JSON.stringify("ok"),
     }));
@@ -626,7 +650,7 @@ describe("gasboost dev", () => {
       entry: "src/server.ts",
     });
 
-    const { server, middleware, importModule } = createServer({
+    const { server, middleware, clearCache, importModule } = createServer({
       dispatch,
     });
 
@@ -654,9 +678,156 @@ describe("gasboost dev", () => {
       vi.fn(),
     );
 
+    expect(clearCache).toHaveBeenCalledTimes(2);
     expect(importModule).toHaveBeenCalledTimes(2);
 
     expect(importModule).toHaveBeenNthCalledWith(1, "src/server.ts");
     expect(importModule).toHaveBeenNthCalledWith(2, "src/server.ts");
+
+    expect(clearCache.mock.invocationCallOrder[0]).toBeLessThan(
+      importModule.mock.invocationCallOrder[0],
+    );
+
+    expect(clearCache.mock.invocationCallOrder[1]).toBeLessThan(
+      importModule.mock.invocationCallOrder[1],
+    );
+  });
+
+  test("RPC invocation間でapplication stateを共有しない", async () => {
+    const instances: Array<{
+      session?: string;
+    }> = [];
+
+    const { dev } = gasboost({
+      entry: "src/server.ts",
+    });
+
+    const { server, middleware } = createServer(() => {
+      const state: {
+        session?: string;
+      } = {};
+
+      instances.push(state);
+
+      return {
+        dispatch: vi.fn(async (name: string, input: unknown) => {
+          if (name === "privateRpc") {
+            state.session = (input as { session: string }).session;
+          }
+
+          return {
+            contents: JSON.stringify(state.session ?? null),
+          };
+        }),
+      };
+    });
+
+    configureDevServer(dev, server as unknown as ViteDevServer);
+
+    const privateResponse = createResponse();
+
+    await middleware()(
+      createRequest({
+        url: "/__gasboost/privateRpc",
+        body: {
+          input: {
+            session: "User A",
+          },
+        },
+      }),
+      privateResponse.response,
+      vi.fn(),
+    );
+
+    expect(privateResponse.body()).toBe(JSON.stringify("User A"));
+
+    const publicResponse = createResponse();
+
+    await middleware()(
+      createRequest({
+        url: "/__gasboost/publicRpc",
+        body: {},
+      }),
+      publicResponse.response,
+      vi.fn(),
+    );
+
+    expect(publicResponse.body()).toBe(JSON.stringify(null));
+
+    expect(instances).toHaveLength(2);
+    expect(instances[0]).not.toBe(instances[1]);
+  });
+
+  test("異なるuserのRPC invocation間でstateを混在させない", async () => {
+    const { dev } = gasboost({
+      entry: "src/server.ts",
+    });
+
+    const { server, middleware } = createServer(() => {
+      const state: {
+        session?: string;
+      } = {};
+
+      return {
+        dispatch: vi.fn(async (name: string, input: unknown) => {
+          if (name === "authenticate") {
+            state.session = (input as { session: string }).session;
+          }
+
+          return {
+            contents: JSON.stringify(state.session ?? null),
+          };
+        }),
+      };
+    });
+
+    configureDevServer(dev, server as unknown as ViteDevServer);
+
+    const userAResponse = createResponse();
+
+    await middleware()(
+      createRequest({
+        url: "/__gasboost/authenticate",
+        body: {
+          input: {
+            session: "User A",
+          },
+        },
+      }),
+      userAResponse.response,
+      vi.fn(),
+    );
+
+    expect(userAResponse.body()).toBe(JSON.stringify("User A"));
+
+    const userBResponse = createResponse();
+
+    await middleware()(
+      createRequest({
+        url: "/__gasboost/authenticate",
+        body: {
+          input: {
+            session: "User B",
+          },
+        },
+      }),
+      userBResponse.response,
+      vi.fn(),
+    );
+
+    expect(userBResponse.body()).toBe(JSON.stringify("User B"));
+
+    const publicResponse = createResponse();
+
+    await middleware()(
+      createRequest({
+        url: "/__gasboost/publicRpc",
+        body: {},
+      }),
+      publicResponse.response,
+      vi.fn(),
+    );
+
+    expect(publicResponse.body()).toBe(JSON.stringify(null));
   });
 });
