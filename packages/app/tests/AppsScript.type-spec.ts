@@ -16,7 +16,7 @@ const app = new AppsScript<{
     id,
     createdAt: new Date(),
   }))
-  .use((context, next) => {
+  .use<{}, { user: string; authenticated: boolean }>((context, next) => {
     context.state.set("user", "alice");
     context.state.set("authenticated", true);
 
@@ -41,24 +41,6 @@ void getUserInput;
 void getUserResult;
 void sumInput;
 void sumResult;
-
-app.state.set("user", "alice");
-app.state.set("authenticated", true);
-
-const user: string | undefined = app.state.get("user");
-const authenticated: boolean | undefined = app.state.get("authenticated");
-
-void user;
-void authenticated;
-
-// @ts-expect-error 存在しないstate keyは設定できない
-app.state.set("missing", "value");
-
-// @ts-expect-error userにはstring以外を設定できない
-app.state.set("user", 123);
-
-// @ts-expect-error authenticatedにはboolean以外を設定できない
-app.state.set("authenticated", "true");
 
 // @ts-expect-error getUserの第1引数はstring
 const invalidGetUserArgs: App["getUser"]["args"] = [123];
@@ -195,3 +177,41 @@ const callInvocation = null as unknown as AppsScriptCallInvocation;
 acceptsInvocation(getInvocation);
 acceptsInvocation(postInvocation);
 acceptsInvocation(callInvocation);
+
+type SessionState = {
+  session: {
+    userId: string;
+  };
+};
+
+type TenantState = {
+  tenant: {
+    id: string;
+  };
+};
+
+const sessionMiddleware: AppsScriptMiddleware<{}, SessionState> = (
+  context,
+  next,
+) => {
+  context.state.set("session", {
+    userId: "user-1",
+  });
+
+  return next();
+};
+
+const appWithSessionOnly = new AppsScript().use(sessionMiddleware);
+
+appWithSessionOnly.calls({
+  invalidHandler: (
+    _input: {},
+    // @ts-expect-error appはTenantStateを保証していない
+    context: AppsScriptContext<
+      SessionState & TenantState,
+      SessionState & TenantState
+    >,
+  ) => {
+    return context.state.get("tenant").id;
+  },
+});
