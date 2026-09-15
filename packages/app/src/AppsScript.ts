@@ -67,11 +67,22 @@ export class AppsScript<
 > {
   private doGetHandler: DoGetHandler<TState, TGuaranteedState> | null = null;
   private doPostHandler: DoPostHandler<TState, TGuaranteedState> | null = null;
+
   private functions: Record<string, RpcHandler> = {};
+
   private middlewares: AppsScriptMiddleware<any, any>[] = [];
+
+  private doGetMiddlewares: AppsScriptMiddleware<any, any>[] = [];
+  private doPostMiddlewares: AppsScriptMiddleware<any, any>[] = [];
+
+  private functionMiddlewares: Record<
+    string,
+    AppsScriptMiddleware<any, any>[]
+  > = {};
 
   public get(handler: DoGetHandler<TState, TGuaranteedState>): this {
     this.doGetHandler = handler;
+    this.doGetMiddlewares = [...this.middlewares];
 
     (globalThis as Record<string, unknown>).doGet = (
       event: GoogleAppsScript.Events.AppsScriptHttpRequestEvent,
@@ -82,6 +93,7 @@ export class AppsScript<
 
   public post(handler: DoPostHandler<TState, TGuaranteedState>): this {
     this.doPostHandler = handler;
+    this.doPostMiddlewares = [...this.middlewares];
 
     (globalThis as Record<string, unknown>).doPost = (
       event: GoogleAppsScript.Events.DoPost,
@@ -136,6 +148,7 @@ export class AppsScript<
         request,
       },
       (context) => this.doGetHandler!(request, context),
+      this.doGetMiddlewares,
     );
   }
 
@@ -152,6 +165,7 @@ export class AppsScript<
         request,
       },
       (context) => this.doPostHandler!(request, context),
+      this.doPostMiddlewares,
     );
   }
 
@@ -162,6 +176,8 @@ export class AppsScript<
       throw new Error(`Function ${name} is not registered.`);
     }
 
+    const middlewares = this.functionMiddlewares[name] ?? [];
+
     const result = await this.execute(
       {
         type: "call",
@@ -169,6 +185,7 @@ export class AppsScript<
         input,
       },
       (context) => handler(input, context),
+      middlewares,
     );
 
     return new AppsScriptResponse(result);
@@ -221,6 +238,7 @@ export class AppsScript<
     }
 
     this.functions[name] = handler;
+    this.functionMiddlewares[name] = [...this.middlewares];
 
     (globalThis as Record<string, unknown>)[name] = (input?: unknown) =>
       this.dispatch(name, input);
@@ -229,6 +247,7 @@ export class AppsScript<
   private execute<TResult>(
     invocation: AppsScriptInvocation,
     handler: (context: AppsScriptContext<TState, TGuaranteedState>) => TResult,
+    middlewares: AppsScriptMiddleware<any, any>[],
   ): TResult {
     const state = new AppsScriptState<TState, TGuaranteedState>();
 
@@ -246,7 +265,7 @@ export class AppsScript<
 
       index = currentIndex;
 
-      const middleware = this.middlewares[currentIndex];
+      const middleware = middlewares[currentIndex];
 
       if (!middleware) {
         return handler(context);
