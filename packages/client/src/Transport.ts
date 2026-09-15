@@ -3,5 +3,5 @@ export type RpcResponse = {
 };
 
 export interface Transport {
-  call(name: string, args: unknown[]): Promise<RpcResponse>;
+  call(name: string, input?: unknown): Promise<RpcResponse>;
 }

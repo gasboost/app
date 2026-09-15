@@ -46,12 +46,17 @@ const { AppsScriptTransport } = await import("../src/AppsScriptTransport");
 
 type TestApp = {
   sum: {
-    args: [a: number, b: number];
+    input: {
+      a: number;
+      b: number;
+    };
     result: number;
   };
 
   getUser: {
-    args: [id: string];
+    input: {
+      id: string;
+    };
     result: {
       id: string;
       name: string;
@@ -59,7 +64,7 @@ type TestApp = {
   };
 
   fail: {
-    args: [];
+    input: undefined;
     result: never;
   };
 };
@@ -85,12 +90,18 @@ describe("AppsScriptTransport", () => {
     serverFunctions = {};
   });
 
-  it("指定したGAS関数を引数付きで呼び出す", () => {
+  it("指定したGAS関数をinput付きで呼び出す", () => {
     const transport = new AppsScriptTransport();
 
-    const promise = transport.call("sum", [1, 2]);
+    const promise = transport.call("sum", {
+      a: 1,
+      b: 2,
+    });
 
-    expect(serverFunctions.sum).toHaveBeenCalledWith(1, 2);
+    expect(serverFunctions.sum).toHaveBeenCalledWith({
+      a: 1,
+      b: 2,
+    });
 
     successHandler({
       contents: "3",
@@ -101,10 +112,22 @@ describe("AppsScriptTransport", () => {
     });
   });
 
+  it("inputなしの場合はGAS関数を0引数で呼び出す", () => {
+    const transport = new AppsScriptTransport();
+
+    const promise = transport.call("fail");
+
+    expect(serverFunctions.fail).toHaveBeenCalledWith();
+
+    failureHandler(new Error("failed"));
+
+    return expect(promise).rejects.toThrow("failed");
+  });
+
   it("failure handlerのErrorをrejectする", async () => {
     const transport = new AppsScriptTransport();
 
-    const promise = transport.call("fail", []);
+    const promise = transport.call("fail");
 
     const error = new Error("failed");
 
@@ -124,9 +147,17 @@ describe("AppsScriptTransport", () => {
       transport,
     });
 
-    await expect(client.sum(1, 2)).resolves.toBe(3);
+    await expect(
+      client.sum({
+        a: 1,
+        b: 2,
+      }),
+    ).resolves.toBe(3);
 
-    expect(transport.call).toHaveBeenCalledWith("sum", [1, 2]);
+    expect(transport.call).toHaveBeenCalledWith("sum", {
+      a: 1,
+      b: 2,
+    });
   });
 });
 
@@ -135,12 +166,18 @@ describe("appsScriptClient", () => {
     serverFunctions = {};
   });
 
-  it("RPC名と引数をTransportへ渡してJSONをparseする", async () => {
+  it("RPC名とinputをTransportへ渡してJSONをparseする", async () => {
     const { client } = appsScriptClient<TestApp>();
 
-    const promise = client.sum(1, 2);
+    const promise = client.sum({
+      a: 1,
+      b: 2,
+    });
 
-    expect(serverFunctions.sum).toHaveBeenCalledWith(1, 2);
+    expect(serverFunctions.sum).toHaveBeenCalledWith({
+      a: 1,
+      b: 2,
+    });
 
     successHandler({
       contents: "3",
@@ -152,7 +189,13 @@ describe("appsScriptClient", () => {
   it("objectをJSON.parseして返す", async () => {
     const { client } = appsScriptClient<TestApp>();
 
-    const promise = client.getUser("user-1");
+    const promise = client.getUser({
+      id: "user-1",
+    });
+
+    expect(serverFunctions.getUser).toHaveBeenCalledWith({
+      id: "user-1",
+    });
 
     successHandler({
       contents: JSON.stringify({
@@ -170,7 +213,7 @@ describe("appsScriptClient", () => {
   it("DateはDateへ復元せず文字列として返す", async () => {
     type DateApp = {
       get: {
-        args: [];
+        input: undefined;
         result: {
           createdAt: Date;
         };
@@ -180,6 +223,8 @@ describe("appsScriptClient", () => {
     const { client } = appsScriptClient<DateApp>();
 
     const promise = client.get();
+
+    expect(serverFunctions.get).toHaveBeenCalledWith();
 
     successHandler({
       contents: JSON.stringify({
@@ -198,7 +243,10 @@ describe("appsScriptClient", () => {
 
     const promise = client.fail();
 
+    expect(serverFunctions.fail).toHaveBeenCalledWith();
+
     const error = new Error("failed");
+
     failureHandler(error);
 
     await expect(promise).rejects.toBe(error);
@@ -207,7 +255,10 @@ describe("appsScriptClient", () => {
   it("不正なJSONならJSON.parseエラーになる", async () => {
     const { client } = appsScriptClient<TestApp>();
 
-    const promise = client.sum(1, 2);
+    const promise = client.sum({
+      a: 1,
+      b: 2,
+    });
 
     successHandler({
       contents: "{invalid-json",
@@ -222,7 +273,10 @@ describe("appsScriptClient", () => {
 
     jobs.subscribe(listener);
 
-    const promise = client.sum(1, 2);
+    const promise = client.sum({
+      a: 1,
+      b: 2,
+    });
 
     const snapshot = jobs.getSnapshot();
 
@@ -266,7 +320,10 @@ describe("appsScriptClient", () => {
 
     void jobs.start("manual", () => manual);
 
-    const rpcPromise = client.sum(1, 2);
+    const rpcPromise = client.sum({
+      a: 1,
+      b: 2,
+    });
 
     const snapshot = jobs.getSnapshot();
 

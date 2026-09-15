@@ -6,19 +6,16 @@ import { appsScriptJobStore } from "./job/AppsScriptJobStore";
 import type { Transport } from "./Transport";
 
 type RpcDefinition = {
-  args: unknown[];
+  input: unknown;
   result: unknown;
 };
 
 type RpcApp = Record<string, RpcDefinition>;
 
 type AppsScriptClient<TApp extends RpcApp> = {
-  [K in keyof TApp]: TApp[K] extends {
-    args: infer TArgs extends unknown[];
-    result: infer TResult;
-  }
-    ? (...args: TArgs) => Promise<TResult>
-    : never;
+  [K in keyof TApp]: [TApp[K]["input"]] extends [undefined]
+    ? () => Promise<TApp[K]["result"]>
+    : (input: TApp[K]["input"]) => Promise<TApp[K]["result"]>;
 };
 
 interface AppsScriptJobs {
@@ -51,9 +48,9 @@ export function appsScriptClient<TApp extends RpcApp>({
           return undefined;
         }
 
-        return (...args: unknown[]) => {
+        return (input?: unknown) => {
           return jobQueue.enqueue(property, async () => {
-            const response = await transport.call(property, args);
+            const response = await transport.call(property, input);
 
             return JSON.parse(response.contents);
           });

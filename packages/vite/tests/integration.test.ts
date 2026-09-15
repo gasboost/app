@@ -16,6 +16,7 @@ async function buildFixture(
     entry,
     runtime,
   });
+
   const result = await build({
     logLevel: "silent",
 
@@ -50,6 +51,7 @@ describe("gasboost integration", () => {
 
   test("RPC global functionを最終bundleへ生成する", async () => {
     const output = await buildFixture(false);
+
     const context = vm.createContext({
       console,
     });
@@ -60,7 +62,11 @@ describe("gasboost integration", () => {
 
     expect(output).toContain("getUser");
     expect(output).toContain("sum");
-    const response = await context.sum(2, 3);
+
+    const response = await context.sum({
+      a: 2,
+      b: 3,
+    });
 
     expect(response).toEqual({
       contents: "5",
@@ -83,9 +89,7 @@ describe("gasboost integration", () => {
     const output = await buildFixture(false);
 
     expect(output).toContain("doGet");
-
     expect(output).toContain("doPost");
-
     expect(output).toContain("getUser");
   });
 
@@ -93,9 +97,7 @@ describe("gasboost integration", () => {
     const output = await buildFixture(true);
 
     expect(output).toContain("doGet");
-
     expect(output).toContain("doPost");
-
     expect(output).toContain("getUser");
   });
 
@@ -103,7 +105,6 @@ describe("gasboost integration", () => {
     const output = await buildFixture(true);
 
     expect(output).toContain("getUser");
-
     expect(output).toContain("sum");
   });
 

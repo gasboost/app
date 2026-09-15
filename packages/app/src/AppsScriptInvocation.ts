@@ -14,7 +14,7 @@ export type AppsScriptPostInvocation = {
 export type AppsScriptCallInvocation = {
   readonly type: "call";
   readonly name: string;
-  readonly args: readonly unknown[];
+  readonly input: unknown;
 };
 
 export type AppsScriptInvocation =
