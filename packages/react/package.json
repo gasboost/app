@@ -1,6 +1,6 @@
 {
   "name": "@gasboost/react",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "React integration for Google Apps Script web applications.",
   "repository": {
     "type": "git",
