@@ -350,6 +350,16 @@ jobs:
 
           pnpm install
 
+          node -e '
+            const react = require("@gasboost/react");
+            if (typeof react.AppsScriptRouter !== "function") {
+              throw new Error("AppsScriptRouter export is not loadable");
+            }
+            if (typeof react.useAppsScriptJob !== "function") {
+              throw new Error("useAppsScriptJob export is not loadable");
+            }
+          '
+
           cat > src/main.tsx <<'EOF'
           import type { AppsScriptJobStore } from "@gasboost/client";
           import {
