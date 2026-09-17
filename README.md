@@ -117,6 +117,10 @@ pnpm add @gasboost/react
 
 `useAppsScriptJob` は Job Store を React の External Store として購読します。
 
+## 配布形式
+
+ランタイムパッケージの `@gasboost/app`、`@gasboost/client`、`@gasboost/react` は CommonJS、ビルドツールの `@gasboost/vite` は ESM として配布します。
+
 ## 責務
 
 gasboost/app は Google Apps Script 自体を置き換えるものではありません。
