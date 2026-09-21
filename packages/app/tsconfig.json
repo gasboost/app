@@ -8,7 +8,7 @@
     "src",
     "tests/**/*.spec.ts",
     "tests/*.test.ts",
-    "tests/AppsScript.type-spec.ts"
+    "tests/*.type-spec.ts"
   ],
   "exclude": ["tests/consumer/.build"]
 }
