@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AppsScript } from "../src/AppsScript";
+import type { AppsScriptMiddleware } from "../src/AppsScriptMiddleware";
 
 describe("AppsScript middleware", () => {
   it("middlewareを登録順に実行する", async () => {
@@ -103,6 +104,64 @@ describe("AppsScript middleware", () => {
     const response = await app.dispatch("test", {});
 
     expect(response.contents).toBe(JSON.stringify("middleware-result"));
+  });
+
+  it("call-local middlewareをglobal middlewareの後に配列順で実行する", async () => {
+    const order: string[] = [];
+    const local1: AppsScriptMiddleware = (_context, next) => {
+      order.push("local1 before");
+      const result = next();
+      order.push("local1 after");
+      return result;
+    };
+    const local2: AppsScriptMiddleware = (_context, next) => {
+      order.push("local2 before");
+      const result = next();
+      order.push("local2 after");
+      return result;
+    };
+
+    const app = new AppsScript()
+      .use((_context, next) => {
+        order.push("global before");
+        const result = next();
+        order.push("global after");
+        return result;
+      })
+      .call(
+        "test",
+        (_input: {}) => {
+          order.push("handler");
+          return "ok";
+        },
+        [local1, local2],
+      );
+
+    await app.dispatch("test", {});
+
+    expect(order).toEqual([
+      "global before",
+      "local1 before",
+      "local2 before",
+      "handler",
+      "local2 after",
+      "local1 after",
+      "global after",
+    ]);
+  });
+
+  it("call-local middlewareを他のRPCへ伝播しない", async () => {
+    const localMiddleware = vi.fn((_context, next) => next());
+    const publicHandler = vi.fn((_input: {}) => "public");
+
+    const app = new AppsScript()
+      .call("privateCall", (_input: {}) => "private", [localMiddleware])
+      .call("publicCall", publicHandler);
+
+    await app.dispatch("publicCall", {});
+
+    expect(localMiddleware).not.toHaveBeenCalled();
+    expect(publicHandler).toHaveBeenCalledOnce();
   });
 
   it("nextを2回呼ぶとエラーになる", async () => {

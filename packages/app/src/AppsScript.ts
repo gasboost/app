@@ -26,6 +26,33 @@ type DoPostHandler<
 type RpcHandler = (...args: any[]) => any;
 type RpcMap = Record<string, RpcHandler>;
 
+type ValidMiddlewareChain<
+  TGuaranteedState extends StateMap,
+  TMiddlewares extends readonly AppsScriptMiddleware<any, any>[],
+> = TMiddlewares extends readonly [
+  infer TMiddleware extends AppsScriptMiddleware<any, any>,
+  ...infer TRest extends readonly AppsScriptMiddleware<any, any>[],
+]
+  ? TMiddleware extends AppsScriptMiddleware<infer TInputState, infer TOutputState>
+    ? TGuaranteedState extends TInputState
+      ? readonly [
+          TMiddleware,
+          ...ValidMiddlewareChain<TGuaranteedState & TOutputState, TRest>,
+        ]
+      : never
+    : never
+  : readonly [];
+
+type MiddlewareChainOutput<
+  TGuaranteedState extends StateMap,
+  TMiddlewares extends readonly AppsScriptMiddleware<any, any>[],
+> = TMiddlewares extends readonly [
+  AppsScriptMiddleware<infer _TInputState, infer TOutputState>,
+  ...infer TRest extends readonly AppsScriptMiddleware<any, any>[],
+]
+  ? MiddlewareChainOutput<TGuaranteedState & TOutputState, TRest>
+  : TGuaranteedState;
+
 type RpcInput<THandler extends RpcHandler> =
   Parameters<THandler> extends []
     ? undefined
@@ -114,6 +141,27 @@ export class AppsScript<
     TGuaranteedState
   >;
 
+  public call<
+    TName extends string,
+    TResult,
+    TMiddlewares extends readonly AppsScriptMiddleware<any, any>[],
+  >(
+    name: TName,
+    handler: (
+      input: undefined,
+      context: AppsScriptContext<
+        TState & MiddlewareChainOutput<TGuaranteedState, TMiddlewares>,
+        MiddlewareChainOutput<TGuaranteedState, TMiddlewares>
+      >,
+    ) => TResult,
+    middlewares: readonly [...TMiddlewares] &
+      ValidMiddlewareChain<TGuaranteedState, TMiddlewares>,
+  ): AppsScript<
+    TState,
+    TFunctions & Record<TName, () => TResult>,
+    TGuaranteedState
+  >;
+
   public call<TName extends string, TInput extends object, TResult>(
     name: TName,
     handler: (
@@ -126,11 +174,34 @@ export class AppsScript<
     TGuaranteedState
   >;
 
+  public call<
+    TName extends string,
+    TInput extends object,
+    TResult,
+    TMiddlewares extends readonly AppsScriptMiddleware<any, any>[],
+  >(
+    name: TName,
+    handler: (
+      input: TInput,
+      context: AppsScriptContext<
+        TState & MiddlewareChainOutput<TGuaranteedState, TMiddlewares>,
+        MiddlewareChainOutput<TGuaranteedState, TMiddlewares>
+      >,
+    ) => TResult,
+    middlewares: readonly [...TMiddlewares] &
+      ValidMiddlewareChain<TGuaranteedState, TMiddlewares>,
+  ): AppsScript<
+    TState,
+    TFunctions & Record<TName, (input: TInput) => TResult>,
+    TGuaranteedState
+  >;
+
   public call(
     name: string,
     handler: RpcHandler,
+    middlewares: readonly AppsScriptMiddleware<any, any>[] = [],
   ): AppsScript<TState, TFunctions, TGuaranteedState> {
-    this.register(name, handler);
+    this.register(name, handler, middlewares);
 
     return this;
   }
@@ -232,13 +303,17 @@ export class AppsScript<
     };
   }
 
-  private register(name: string, handler: RpcHandler): void {
+  private register(
+    name: string,
+    handler: RpcHandler,
+    middlewares: readonly AppsScriptMiddleware<any, any>[] = [],
+  ): void {
     if (this.functions[name]) {
       throw new Error(`Function ${name} is already registered.`);
     }
 
     this.functions[name] = handler;
-    this.functionMiddlewares[name] = [...this.middlewares];
+    this.functionMiddlewares[name] = [...this.middlewares, ...middlewares];
 
     (globalThis as Record<string, unknown>)[name] = (input?: unknown) =>
       this.dispatch(name, input);
