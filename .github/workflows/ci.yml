@@ -38,15 +38,6 @@ jobs:
       - name: Build app
         run: pnpm --filter @gasboost/app build
 
-      - name: Typecheck vite
-        run: pnpm --filter @gasboost/vite typecheck
-
-      - name: Test vite
-        run: pnpm --filter @gasboost/vite test
-
-      - name: Build vite
-        run: pnpm --filter @gasboost/vite build
-
       - name: Typecheck client
         run: pnpm --filter @gasboost/client typecheck
 
@@ -67,9 +58,6 @@ jobs:
 
       - name: Pack app
         run: pnpm --filter @gasboost/app pack
-
-      - name: Pack vite
-        run: pnpm --filter @gasboost/vite pack
 
       - name: Pack client
         run: pnpm --filter @gasboost/client pack
@@ -135,96 +123,6 @@ jobs:
           pnpm exec tsc
           node index.js
 
-      - name: Smoke test vite package
-        run: |
-          APP_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-app-*.tgz' -print -quit)"
-          VITE_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-vite-*.tgz' -print -quit)"
-
-          rm -rf /tmp/gasboost-vite-consumer
-          mkdir -p /tmp/gasboost-vite-consumer/src
-          cd /tmp/gasboost-vite-consumer
-
-          cat > package.json <<EOF
-          {
-            "name": "gasboost-vite-consumer",
-            "private": true,
-            "type": "module",
-            "scripts": {
-              "build": "vite build"
-            },
-            "dependencies": {
-              "@gasboost/app": "file:$APP_PACKAGE"
-            },
-            "devDependencies": {
-              "@gasboost/vite": "file:$VITE_PACKAGE",
-              "vite": "^8.0.0",
-              "typescript": "^7.0.0",
-              "@types/google-apps-script": "^2.0.0"
-            },
-            "pnpm": {
-              "overrides": {
-                "@gasboost/app": "file:$APP_PACKAGE"
-              }
-            }
-          }
-          EOF
-
-          pnpm install
-
-          cat > src/main.ts <<'EOF'
-          import { AppsScript } from "@gasboost/app";
-
-          const app = new AppsScript()
-            .get(() => {
-              return {
-                marker: "GET_RESULT",
-              } as never;
-            })
-            .call(
-              "sum",
-              (input: { a: number; b: number }) =>
-                input.a + input.b,
-            );
-
-          export default app;
-          EOF
-
-          cat > vite.config.ts <<'EOF'
-          import { defineConfig } from "vite";
-          import { gasboost } from "@gasboost/vite";
-
-          const { build } = gasboost({
-            entry: "src/main.ts",
-          });
-
-          export default defineConfig({
-            plugins: [build],
-          });
-          EOF
-
-          cat > tsconfig.json <<'EOF'
-          {
-            "compilerOptions": {
-              "target": "ES2022",
-              "module": "NodeNext",
-              "moduleResolution": "NodeNext",
-              "strict": true,
-              "types": ["google-apps-script"],
-              "skipLibCheck": true
-            },
-            "include": [
-              "src",
-              "vite.config.ts"
-            ]
-          }
-          EOF
-
-          pnpm exec tsc --noEmit
-          pnpm build
-
-          test -f dist/main.js
-          grep -q "function doGet" dist/main.js
-          grep -q "function sum" dist/main.js
       - name: Smoke test client package
         run: |
           APP_PACKAGE="$(find "$(pwd)" -maxdepth 1 -name 'gasboost-app-*.tgz' -print -quit)"
@@ -241,10 +139,10 @@ jobs:
 
           cat > package.json <<'EOF'
           {
-          "type": "module",
-          "scripts": {
+            "type": "module",
+            "scripts": {
               "build": "vite build"
-          }
+            }
           }
           EOF
 
@@ -291,7 +189,7 @@ jobs:
 
           cat > tsconfig.json <<'EOF'
           {
-          "compilerOptions": {
+            "compilerOptions": {
               "target": "ES2022",
               "module": "ESNext",
               "moduleResolution": "Bundler",
@@ -299,8 +197,8 @@ jobs:
               "noEmit": true,
               "types": ["google-apps-script"],
               "skipLibCheck": true
-          },
-          "include": ["src"]
+            },
+            "include": ["src"]
           }
           EOF
 
@@ -320,31 +218,31 @@ jobs:
 
           cat > package.json <<EOF
           {
-          "name": "gasboost-react-consumer",
-          "private": true,
-          "type": "module",
-          "scripts": {
+            "name": "gasboost-react-consumer",
+            "private": true,
+            "type": "module",
+            "scripts": {
               "build": "vite build"
-          },
-          "dependencies": {
+            },
+            "dependencies": {
               "@gasboost/client": "file:$CLIENT_PACKAGE",
               "@gasboost/react": "file:$REACT_PACKAGE",
               "react": "^19.0.0",
               "react-dom": "^19.0.0",
               "react-router-dom": "^7.0.0"
-          },
-          "devDependencies": {
+            },
+            "devDependencies": {
               "@types/react": "^19.0.0",
               "@types/react-dom": "^19.0.0",
               "@vitejs/plugin-react": "^5.0.0",
               "typescript": "^5.0.0",
               "vite": "^7.0.0"
-          },
-          "pnpm": {
+            },
+            "pnpm": {
               "overrides": {
-              "@gasboost/client": "file:$CLIENT_PACKAGE"
+                "@gasboost/client": "file:$CLIENT_PACKAGE"
               }
-          }
+            }
           }
           EOF
 
@@ -363,29 +261,29 @@ jobs:
           cat > src/main.tsx <<'EOF'
           import type { AppsScriptJobStore } from "@gasboost/client";
           import {
-          AppsScriptRouter,
-          useAppsScriptJob,
+            AppsScriptRouter,
+            useAppsScriptJob,
           } from "@gasboost/react";
           import { HashRouter } from "react-router-dom";
 
           function Job({
-          store,
+            store,
           }: {
-          store: AppsScriptJobStore;
+            store: AppsScriptJobStore;
           }) {
-          const job = useAppsScriptJob(store);
+            const job = useAppsScriptJob(store);
 
-          return <div>{String(job)}</div>;
+            return <div>{String(job)}</div>;
           }
 
           export function App() {
-          return (
+            return (
               <AppsScriptRouter>
-              <HashRouter>
+                <HashRouter>
                   <div>app</div>
-              </HashRouter>
+                </HashRouter>
               </AppsScriptRouter>
-          );
+            );
           }
 
           void Job;
@@ -401,24 +299,24 @@ jobs:
           import react from "@vitejs/plugin-react";
 
           export default defineConfig({
-          plugins: [react()],
+            plugins: [react()],
           });
           EOF
 
           cat > tsconfig.json <<'EOF'
           {
-          "compilerOptions": {
+            "compilerOptions": {
               "target": "ES2022",
               "module": "ESNext",
               "moduleResolution": "Bundler",
               "jsx": "react-jsx",
               "strict": true,
               "skipLibCheck": true
-          },
-          "include": [
+            },
+            "include": [
               "src",
               "vite.config.ts"
-          ]
+            ]
           }
           EOF
 
