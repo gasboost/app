@@ -2,16 +2,18 @@
 
 Google Apps Script で TypeScript アプリケーションを構築するためのライブラリ群です。
 
-Google Apps Script 固有のグローバル関数、RPC、ビルド、ブラウザとの通信、React との統合を、それぞれ独立したパッケージとして提供します。
+Google Apps Script 固有のグローバル関数、RPC、ブラウザとの通信、React との統合を、それぞれ独立したパッケージとして提供します。
 
 ## パッケージ
 
 | パッケージ         | 役割                                              |
 | ------------------ | ------------------------------------------------- |
 | `@gasboost/app`    | GET / POST / RPC を定義するバックエンドランタイム |
-| `@gasboost/vite`   | GAS 向けの Vite ビルドと開発環境                  |
 | `@gasboost/client` | 型安全な RPC クライアントと非同期 Job 管理        |
 | `@gasboost/react`  | React Router / Job 状態との統合                   |
+
+ビルドとローカル開発のための `@gasboost/vite` は
+[gasboost/dev](https://github.com/gasboost/dev) で管理されています。
 
 ## 全体構成
 
@@ -119,7 +121,9 @@ pnpm add @gasboost/react
 
 ## 配布形式
 
-ランタイムパッケージの `@gasboost/app`、`@gasboost/client`、`@gasboost/react` は CommonJS、ビルドツールの `@gasboost/vite` は ESM として配布します。
+このリポジトリで管理する `@gasboost/app`、`@gasboost/client`、`@gasboost/react` は CommonJS として配布します。
+
+ビルドツールの `@gasboost/vite` は ESM として配布され、`gasboost/dev` で管理されています。
 
 ## 責務
 
