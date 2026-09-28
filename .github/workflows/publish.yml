@@ -19,7 +19,6 @@ jobs:
 
     outputs:
       publish-app: ${{ steps.versions.outputs.publish-app }}
-      publish-vite: ${{ steps.versions.outputs.publish-vite }}
       publish-client: ${{ steps.versions.outputs.publish-client }}
       publish-react: ${{ steps.versions.outputs.publish-react }}
 
@@ -57,13 +56,12 @@ jobs:
           }
 
           check_package publish-app packages/app/package.json
-          check_package publish-vite packages/vite/package.json
           check_package publish-client packages/client/package.json
           check_package publish-react packages/react/package.json
 
   publish:
     needs: check-versions
-    if: ${{ needs.check-versions.outputs.publish-app == 'true' || needs.check-versions.outputs.publish-vite == 'true' || needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true' }}
+    if: ${{ needs.check-versions.outputs.publish-app == 'true' || needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true' }}
     runs-on: ubuntu-latest
 
     permissions:
@@ -98,20 +96,8 @@ jobs:
         run: pnpm --filter @gasboost/app test
 
       - name: Build app
-        if: ${{ needs.check-versions.outputs.publish-app == 'true' || needs.check-versions.outputs.publish-vite == 'true' }}
+        if: ${{ needs.check-versions.outputs.publish-app == 'true' }}
         run: pnpm --filter @gasboost/app build
-
-      - name: Typecheck vite
-        if: ${{ needs.check-versions.outputs.publish-vite == 'true' }}
-        run: pnpm --filter @gasboost/vite typecheck
-
-      - name: Test vite
-        if: ${{ needs.check-versions.outputs.publish-vite == 'true' }}
-        run: pnpm --filter @gasboost/vite test
-
-      - name: Build vite
-        if: ${{ needs.check-versions.outputs.publish-vite == 'true' }}
-        run: pnpm --filter @gasboost/vite build
 
       - name: Typecheck client
         if: ${{ needs.check-versions.outputs.publish-client == 'true' }}
@@ -122,7 +108,7 @@ jobs:
         run: pnpm --filter @gasboost/client test
 
       - name: Build client
-        if: needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true'
+        if: ${{ needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true' }}
         run: pnpm --filter @gasboost/client build
 
       - name: Typecheck react
@@ -145,16 +131,6 @@ jobs:
       - name: Publish app
         if: ${{ needs.check-versions.outputs.publish-app == 'true' }}
         working-directory: packages/app
-        run: pnpm publish --access public --no-git-checks
-
-      - name: Verify vite package contents
-        if: ${{ needs.check-versions.outputs.publish-vite == 'true' }}
-        working-directory: packages/vite
-        run: pnpm pack
-
-      - name: Publish vite
-        if: ${{ needs.check-versions.outputs.publish-vite == 'true' }}
-        working-directory: packages/vite
         run: pnpm publish --access public --no-git-checks
 
       - name: Verify client package contents
