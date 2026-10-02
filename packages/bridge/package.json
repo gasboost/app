@@ -1,0 +1,54 @@
+{
+  "name": "@gasboost/bridge",
+  "version": "0.1.0",
+  "description": "PostMessage bridge for external frontends communicating with Google Apps Script HTML Service.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gasboost/app.git",
+    "directory": "packages/bridge"
+  },
+  "license": "MIT",
+  "author": "tiger-oshima",
+  "keywords": [
+    "google-apps-script",
+    "gas",
+    "postmessage",
+    "bridge",
+    "gasboost"
+  ],
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    "./apps-script": {
+      "types": "./dist/apps-script/index.d.ts",
+      "default": "./dist/apps-script/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "default": "./dist/runtime/index.js"
+    },
+    "./transport": {
+      "types": "./dist/transport/index.d.ts",
+      "default": "./dist/transport/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build-runtime.mjs && rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "node scripts/build-runtime.mjs && tsc -p tsconfig.json --noEmit",
+    "test": "node scripts/build-runtime.mjs && vitest run --config vitest.config.mts",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@gasboost/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/google-apps-script": "^2.0.12",
+    "esbuild": "^0.25.0",
+    "jsdom": "^30.0.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
