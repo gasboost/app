@@ -47,6 +47,15 @@ jobs:
       - name: Build client
         run: pnpm --filter @gasboost/client build
 
+      - name: Typecheck bridge
+        run: pnpm --filter @gasboost/bridge typecheck
+
+      - name: Test bridge
+        run: pnpm --filter @gasboost/bridge test
+
+      - name: Build bridge
+        run: pnpm --filter @gasboost/bridge build
+
       - name: Typecheck react
         run: pnpm --filter @gasboost/react typecheck
 
@@ -61,6 +70,12 @@ jobs:
 
       - name: Pack client
         run: pnpm --filter @gasboost/client pack
+
+      - name: Pack bridge
+        run: pnpm --filter @gasboost/bridge pack
+
+      - name: Smoke test bridge package
+        run: pnpm --filter @gasboost/bridge smoke
 
       - name: Pack react
         run: pnpm --filter @gasboost/react pack

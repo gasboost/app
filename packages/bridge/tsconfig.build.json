@@ -10,5 +10,5 @@
     "moduleResolution": "Node16"
   },
   "include": ["src"],
-  "exclude": ["tests", "dist"]
+  "exclude": ["tests", "dist", "src/internal/runtime-entry.ts"]
 }

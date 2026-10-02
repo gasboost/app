@@ -35,15 +35,17 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config vitest.config.mts"
+    "build": "node scripts/build-runtime.mjs && rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "node scripts/build-runtime.mjs && tsc -p tsconfig.json --noEmit",
+    "test": "node scripts/build-runtime.mjs && vitest run --config vitest.config.mts",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@gasboost/client": "workspace:*"
   },
   "devDependencies": {
     "@types/google-apps-script": "^2.0.12",
+    "esbuild": "^0.25.0",
     "jsdom": "^30.0.1"
   },
   "publishConfig": {

@@ -1,6 +1,7 @@
 **/node_modules
 **/dist
 **/.build
+packages/bridge/src/generated/
 packages/*/tests/*.js
 packages/*/tests/*.d.ts
 packages/*/tests/*.d.ts.map

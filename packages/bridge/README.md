@@ -24,6 +24,8 @@ export function doGet() {
 
 `AppsScriptBridge` creates a minimal HTML Service document, sets `XFrameOptionsMode.ALLOWALL`, and embeds the bridge runtime. Apps Script server globals are only used when `html()` is called.
 
+The embedded bundle is generated from `AppsScriptBridgeRuntime` during build, typecheck, and test. Its entrypoint delegates RPC to `appsScriptClient` and the existing `AppsScriptTransport`; the embedded page does not maintain a separate RPC implementation.
+
 ## External parent frontend
 
 ```ts

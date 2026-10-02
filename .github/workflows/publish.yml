@@ -20,6 +20,7 @@ jobs:
     outputs:
       publish-app: ${{ steps.versions.outputs.publish-app }}
       publish-client: ${{ steps.versions.outputs.publish-client }}
+      publish-bridge: ${{ steps.versions.outputs.publish-bridge }}
       publish-react: ${{ steps.versions.outputs.publish-react }}
 
     steps:
@@ -57,11 +58,12 @@ jobs:
 
           check_package publish-app packages/app/package.json
           check_package publish-client packages/client/package.json
+          check_package publish-bridge packages/bridge/package.json
           check_package publish-react packages/react/package.json
 
   publish:
     needs: check-versions
-    if: ${{ needs.check-versions.outputs.publish-app == 'true' || needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true' }}
+    if: ${{ needs.check-versions.outputs.publish-app == 'true' || needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true' || needs.check-versions.outputs.publish-bridge == 'true' }}
     runs-on: ubuntu-latest
 
     permissions:
@@ -108,8 +110,20 @@ jobs:
         run: pnpm --filter @gasboost/client test
 
       - name: Build client
-        if: ${{ needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true' }}
+        if: ${{ needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true' || needs.check-versions.outputs.publish-bridge == 'true' }}
         run: pnpm --filter @gasboost/client build
+
+      - name: Typecheck bridge
+        if: ${{ needs.check-versions.outputs.publish-bridge == 'true' }}
+        run: pnpm --filter @gasboost/bridge typecheck
+
+      - name: Test bridge
+        if: ${{ needs.check-versions.outputs.publish-bridge == 'true' }}
+        run: pnpm --filter @gasboost/bridge test
+
+      - name: Build bridge
+        if: ${{ needs.check-versions.outputs.publish-bridge == 'true' }}
+        run: pnpm --filter @gasboost/bridge build
 
       - name: Typecheck react
         if: ${{ needs.check-versions.outputs.publish-react == 'true' }}
@@ -147,6 +161,16 @@ jobs:
         if: ${{ needs.check-versions.outputs.publish-react == 'true' }}
         working-directory: packages/react
         run: pnpm pack
+
+      - name: Verify bridge package contents
+        if: ${{ needs.check-versions.outputs.publish-bridge == 'true' }}
+        working-directory: packages/bridge
+        run: pnpm pack
+
+      - name: Publish bridge
+        if: ${{ needs.check-versions.outputs.publish-bridge == 'true' }}
+        working-directory: packages/bridge
+        run: pnpm publish --access public --no-git-checks
 
       - name: Publish react
         if: ${{ needs.check-versions.outputs.publish-react == 'true' }}

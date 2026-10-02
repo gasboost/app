@@ -1,4 +1,4 @@
-import { APPS_SCRIPT_BRIDGE_RUNTIME_BUNDLE } from "../internal/runtime-bundle";
+import { APPS_SCRIPT_BRIDGE_RUNTIME_BUNDLE } from "../generated/runtime-bundle";
 
 export interface AppsScriptBridgeOptions {
   allowedOrigins: string[];
