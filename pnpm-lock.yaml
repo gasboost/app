@@ -27,6 +27,19 @@ importers:
         specifier: ^8.2.2
         version: 8.2.2(@types/node@26.4.1)
 
+  packages/bridge:
+    dependencies:
+      '@gasboost/client':
+        specifier: workspace:*
+        version: link:../client
+    devDependencies:
+      '@types/google-apps-script':
+        specifier: ^2.0.12
+        version: 2.0.12
+      jsdom:
+        specifier: ^30.0.1
+        version: 30.0.1
+
   packages/client:
     devDependencies:
       jsdom:
