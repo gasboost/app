@@ -1,6 +1,6 @@
 {
   "name": "@gasboost/bridge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "PostMessage bridge for external frontends communicating with Google Apps Script HTML Service.",
   "repository": {
     "type": "git",

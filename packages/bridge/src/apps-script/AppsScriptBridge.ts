@@ -4,6 +4,10 @@ export interface AppsScriptBridgeOptions {
   allowedOrigins: string[];
 }
 
+export interface AppsScriptBridgeHtmlOptions {
+  token?: string;
+}
+
 declare const HtmlService: GoogleAppsScript.HTML.HtmlService;
 
 export class AppsScriptBridge {
@@ -13,9 +17,10 @@ export class AppsScriptBridge {
     this.allowedOrigins = [...options.allowedOrigins];
   }
 
-  public html(): GoogleAppsScript.HTML.HtmlOutput {
+  public html(options: AppsScriptBridgeHtmlOptions = {}): GoogleAppsScript.HTML.HtmlOutput {
     const escapedConfig = JSON.stringify({
       allowedOrigins: this.allowedOrigins,
+      token: options.token ?? "",
     }).replace(/</g, "\\u003c");
 
     return HtmlService.createHtmlOutput(

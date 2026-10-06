@@ -3,7 +3,7 @@ import { AppsScriptBridgeRuntime } from "../runtime";
 
 declare global {
   interface Window {
-    __GASBOOST_BRIDGE__: { allowedOrigins: string[] };
+    __GASBOOST_BRIDGE__: { allowedOrigins: string[]; token: string };
   }
 }
 
@@ -13,7 +13,7 @@ const { client } = appsScriptClient<
 
 const runtime = new AppsScriptBridgeRuntime({
   allowedOrigins: window.__GASBOOST_BRIDGE__.allowedOrigins,
-  token: new URLSearchParams(location.search).get("gasboostBridgeToken") ?? "",
+  token: window.__GASBOOST_BRIDGE__.token,
   call: (method, input) => client[method](input),
 });
 

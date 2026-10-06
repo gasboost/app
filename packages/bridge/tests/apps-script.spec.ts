@@ -27,10 +27,13 @@ describe("AppsScriptBridge", () => {
       allowedOrigins: ["http://localhost:5173"],
     });
 
-    bridge.html();
+    bridge.html({ token: "token" });
 
     expect(createHtmlOutput).toHaveBeenCalledWith(
       expect.stringContaining("http://localhost:5173"),
+    );
+    expect(createHtmlOutput).toHaveBeenCalledWith(
+      expect.stringContaining('"token":"token"'),
     );
     expect(createHtmlOutput).toHaveBeenCalledWith(
       expect.stringContaining(".postMessage"),
@@ -50,7 +53,9 @@ describe("AppsScriptBridge", () => {
       XFrameOptionsMode: { ALLOWALL: "ALLOWALL" },
     });
     const { AppsScriptBridge } = await import("../src/apps-script");
-    new AppsScriptBridge({ allowedOrigins: ["https://parent.example"] }).html();
+    new AppsScriptBridge({ allowedOrigins: ["https://parent.example"] }).html({
+      token: "token",
+    });
 
     const calls: string[] = [];
     const postMessage = vi.fn(() => calls.push("ready"));
@@ -78,7 +83,7 @@ describe("AppsScriptBridge", () => {
     for (const script of page.querySelectorAll("script")) {
       new Function("window", "location", "globalThis", script.textContent ?? "")(
         fakeWindow,
-        { search: "?gasboostBridgeToken=token" },
+        { search: "" },
         { google: { script: { run } } },
       );
     }

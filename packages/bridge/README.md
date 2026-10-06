@@ -17,8 +17,10 @@ const bridge = new AppsScriptBridge({
   allowedOrigins: ["https://app.example.com", "http://localhost:5173"],
 });
 
-export function doGet() {
-  return bridge.html();
+export function doGet(event: GoogleAppsScript.Events.DoGet) {
+  return bridge.html({
+    token: event.parameter.gasboostBridgeToken ?? "",
+  });
 }
 ```
 
@@ -53,7 +55,7 @@ import { AppsScriptBridgeRuntime } from "@gasboost/bridge/runtime";
 
 const runtime = new AppsScriptBridgeRuntime({
   allowedOrigins: ["http://localhost:5173"],
-  token: new URLSearchParams(location.search).get("gasboostBridgeToken") ?? "",
+  token: window.__GASBOOST_BRIDGE__.token,
   call: async (method, input) => {
     return { method, input };
   },
