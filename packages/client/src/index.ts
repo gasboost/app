@@ -10,3 +10,10 @@ export type { RpcResponse, Transport } from "./Transport";
 export type { AppsScriptJob } from "./job/AppsScriptJob";
 export { AppsScriptJobStore } from "./job/AppsScriptJobStore";
 export { AppsScriptHistoryPipeline } from "./navigation/AppsScriptHistoryPipeline";
+export {
+  createAuthenticatedClient,
+  AuthenticationRequiredError,
+  type AuthenticatedClient,
+  type AuthenticatedMethod,
+  type TokenProvider,
+} from "./AuthenticatedClient";
