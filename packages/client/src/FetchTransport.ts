@@ -1,3 +1,4 @@
+import type { RpcMetadata } from "./RpcMetadata";
 import type { RpcResponse, Transport } from "./Transport";
 
 export interface FetchTransportOptions {
@@ -19,7 +20,11 @@ export class FetchTransport implements Transport {
     this.endpoint = endpoint;
   }
 
-  public async call(name: string, input?: unknown): Promise<RpcResponse> {
+  public async call(
+    name: string,
+    input?: unknown,
+    metadata?: RpcMetadata,
+  ): Promise<RpcResponse> {
     const response = await fetch(
       `${this.endpoint}/${encodeURIComponent(name)}`,
       {
@@ -27,13 +32,10 @@ export class FetchTransport implements Transport {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(
-          input === undefined
-            ? {}
-            : {
-                input,
-              },
-        ),
+        body: JSON.stringify({
+          ...(input === undefined ? {} : { input }),
+          ...(metadata === undefined ? {} : { metadata }),
+        }),
       },
     );
 

@@ -54,11 +54,21 @@ describe("AppsScriptBridgeRuntime", () => {
     await runtime.handleMessage(
       new MessageEvent("message", {
         origin: "http://localhost:5173",
-        data: BridgeProtocol.request("1", "token", "getUser", { id: "1" }),
+        data: BridgeProtocol.request(
+          "1",
+          "token",
+          "getUser",
+          { id: "1" },
+          { trace: "runtime" },
+        ),
       }),
     );
 
-    expect(call).toHaveBeenCalledWith("getUser", { id: "1" });
+    expect(call).toHaveBeenCalledWith(
+      "getUser",
+      { id: "1" },
+      { trace: "runtime" },
+    );
     expect(top.postMessage).toHaveBeenCalledWith(
       BridgeProtocol.success("1", "token", { ok: true }),
       "http://localhost:5173",
@@ -136,4 +146,31 @@ describe("AppsScriptBridgeRuntime", () => {
       "http://localhost:5173",
     );
   });
+});
+
+it("keeps bridge tokens separate and rejects malformed metadata envelopes", () => {
+  const metadata = {
+    "@example/opaque": { token: "different-value", arbitrary: [1, 2] },
+  };
+  const request = BridgeProtocol.request(
+    "id",
+    "bridge-token",
+    "business",
+    {},
+    metadata,
+  );
+  expect(request.token).toBe("bridge-token");
+  expect(request.metadata).toBe(metadata);
+  expect(BridgeProtocol.isRequest(request, "bridge-token")).toBe(true);
+  expect(BridgeProtocol.isRequest(request, "different-value")).toBe(false);
+  for (const invalid of [null, [], "text", 1]) {
+    expect(BridgeProtocol.isRequest({ ...request, metadata: invalid })).toBe(
+      false,
+    );
+  }
+  expect(
+    BridgeProtocol.isRequest(
+      BridgeProtocol.request("id", "bridge-token", "business"),
+    ),
+  ).toBe(true);
 });

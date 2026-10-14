@@ -175,78 +175,82 @@ Job の状態管理、cancel、retry などの実体は `@gasboost/client` が�
 
 MIT
 
-## 認証状態と RPC client
+## Typed RPC client と metadata
 
-`AuthProvider` / `useAuth()` は user、session token、認証状態を管理します。RPC client は `AppsScriptProvider` / `useAppsScript()` が提供します。
-
-バックエンドの認証 RPC はアプリごとに異なるため、`AuthAdapter` で既存の処理を接続します。adapter は component の外で定義するか `useMemo` で安定させてください。adapter または storage が変わるとセッションを復元し直します。
+`createAppsScriptContext(client)` に通常の typed client を渡すと、専用の `AppsScriptProvider` / `useAppsScript()` が得られます。認証対象 RPC 名の指定や input 型の変換はありません。`AuthProvider` がなくても利用できます。
 
 ```tsx
-// apps-script.ts: 型付き client を一度接続する
+// apps-script.ts
 import { appsScriptClient } from "@gasboost/client";
-import { createAppsScriptContext, type AuthAdapter } from "@gasboost/react";
+import { createAppsScriptContext } from "@gasboost/react";
 import type { AppType } from "../backend/main";
 
 const { client } = appsScriptClient<AppType>();
-export const { AppsScriptProvider, useAppsScript } = createAppsScriptContext(
-  client,
-  ["createEmployee"],
-);
-
-type User = { id: string; name: string };
-type Credentials = { email: string; password: string };
-
-// この例では backend に signIn / getCurrentUser / signOut が定義されている前提。
-export const authAdapter: AuthAdapter<User, Credentials> = {
-  signIn: (credentials) => client.signIn(credentials), // { user, token } を返す
-  restoreSession: (token) => client.getCurrentUser({ token }), // User または null
-  signOut: async (token) => { await client.signOut({ token }); },
-};
+export const { AppsScriptProvider, useAppsScript } = createAppsScriptContext(client);
 ```
 
 ```tsx
-import { AuthProvider, localStorageAuthStorage, useAuth } from "@gasboost/react";
-import { AppsScriptProvider, useAppsScript, authAdapter } from "./apps-script";
+import { AppsScriptProvider, useAppsScript } from "./apps-script";
 
 export function Root() {
-  return (
-    <AuthProvider adapter={authAdapter} storage={localStorageAuthStorage}>
-      <AppsScriptProvider><App /></AppsScriptProvider>
-    </AuthProvider>
-  );
+  return <AppsScriptProvider><App /></AppsScriptProvider>;
 }
 
 function App() {
-  const { user, isAuthenticated, isLoading, error, signIn, signOut } = useAuth();
   const appsScript = useAppsScript();
-
-  // 認証後、token を明示せずに呼び出せる。
   const create = () => appsScript.createEmployee({ name: "Taro", email: "taro@example.com" });
-  return <button disabled={!isAuthenticated || isLoading} onClick={create}>Create</button>;
+  return <button onClick={create}>Create</button>;
 }
 ```
 
-`createAppsScriptContext` は client と認証対象の RPC 名を結び付け、型引数の不要な Hook と専用 Provider を返します。RPC の型は実行時には存在しないため、認証対象名を明示します。公開 RPC の入力は変更しません。
-
-直接 public API の `AppsScriptProvider` / `useAppsScript` を利用する場合は、Context が契約を推論できないため Hook に元の client 型と、Provider に指定した認証対象名の union を渡します。
+React state を metadata provider として接続する場合は `metadataProviders` prop を渡します。合成・Transport への受け渡しは `@gasboost/client` の pipeline が担当します。
 
 ```tsx
-<AppsScriptProvider client={client} authenticatedMethods={["createEmployee"]}>
+import { useMemo } from "react";
+import type { MetadataProvider } from "@gasboost/client";
+import { AppsScriptProvider } from "./apps-script";
+
+function Workspace({ workspaceId }: { workspaceId: string }) {
+  const providers = useMemo<MetadataProvider[]>(() => [
+    () => ({ "@my-app/workspace": { id: workspaceId } }),
+  ], [workspaceId]);
+  return <AppsScriptProvider metadataProviders={providers}><App /></AppsScriptProvider>;
+}
+```
+
+Provider は元の client を変更せず、その Provider に限る scoped client を作ります。元の provider → React provider → per-call metadata の順に合成され、同じキーは後の値を優先します。provider の配列が同一なら client を再利用し、配列が変われば新しい scoped client を Hook から返します。以前取得した client は以前の provider を保持するため、state を閉じ込めた provider を更新した場合は最新の Hook の返り値を使ってください。provider が外部の可変 source を読む場合は、実行時の最新値を参照します。
+
+直接 public API を利用する場合は `AppsScriptProvider` に client を渡し、Hook に client 型を指定します。
+
+```tsx
+<AppsScriptProvider client={client} metadataProviders={providers}>
   <App />
 </AppsScriptProvider>
 
-const appsScript = useAppsScript<typeof client, "createEmployee">();
+const appsScript = useAppsScript<typeof client>();
 ```
 
-`useAuth<User, Credentials>()` に型引数を渡すと user / signIn の型も利用できます。`useAuth()` は client を返しません。Hook は対応する Provider の内側で使用します。
+metadata を指定しない Provider は元の client をそのまま提供します。Hook は対応する Provider の内側で使用します。
 
-### Storage と lifecycle
+## AuthProvider と storage
 
-- `AuthStorage` は `get(): string | null`、`set(token): void`、`remove(): void` を公開します。独自 adapter も注入できます。
-- storage 未指定時は Provider ごとに独立した memory storage を使います。unmount で破棄されます。
-- `memoryAuthStorage` は明示的に共有する memory adapter です。独立したものは `createMemoryAuthStorage()` で生成できます。
-- `localStorageAuthStorage` / `sessionStorageAuthStorage` は opt-in です。共通キー `gasboost.sessionToken`（`AUTH_STORAGE_KEY`）で token を保存します。異なるアプリやアカウントで保存先を分ける場合は独自 `AuthStorage` を注入します。
-- 初期化時は保存済み token を `restoreSession` で検証し、user を復元します。復元中は `isLoading: true`、`token: null` です。期限切れを示す `null` が返ると保存済み token を削除します。通信失敗時は token を保持し、`error` に失敗を格納します。
-- signIn 成功時に token を保存します。signOut はローカルセッションと storage を先にクリアし、任意の backend signOut を呼びます。進行中の復元や signIn が遅れて完了しても signOut 後のセッションは復活しません。
-- 認証対象 RPC に token がなければ送信せず `AuthenticationRequiredError` で reject します。client は現在の認証状態を参照するため、以前取得した client にも signIn / signOut の変更が反映されます。
-- browser storage は SSR 時に読み取りが `null`、書き込み・削除が no-op です。ブラウザで storage が利用不可の場合のエラーは隠さず、復元では `error`、signIn / signOut では rejected Promise として扱います。
+既存の `AuthProvider` / `useAuth()` は認証状態の lifecycle と storage を管理します。認証エンジンや固定の auth RPC contract、認証 metadata の schema はここで定義しません。auth metadata provider と標準 adapter の実装は `gasboost/auth` 側で扱います。
+
+```tsx
+import { AuthProvider, localStorageAuthStorage, useAuth } from "@gasboost/react";
+
+<AuthProvider adapter={authAdapter} storage={localStorageAuthStorage}>
+  <App />
+</AuthProvider>
+
+const { user, token, isAuthenticated, isLoading, error, signIn, signOut } = useAuth();
+```
+
+`AuthAdapter<User, Credentials>` は `signIn(credentials): Promise<{ user, token }>`、`restoreSession(token): Promise<User | null>`、任意の `signOut(token): Promise<void>` を持ちます。adapter は component の外で定義するか `useMemo` で安定させてください。adapter または storage が変わるとセッションを復元し直します。`useAuth<User, Credentials>()` で user / signIn の型も利用できます。`useAuth` は RPC client を返しません。
+
+- `AuthStorage` は `get(): string | null`、`set(token): void`、`remove(): void` を公開し、独自 storage も注入できます。
+- 未指定時は Provider ごとに独立した memory storage を使い、unmount で破棄します。`memoryAuthStorage` は明示的に共有する adapter、`createMemoryAuthStorage()` は独立した adapter を作ります。
+- `localStorageAuthStorage` / `sessionStorageAuthStorage` は opt-in です。キーは `gasboost.sessionToken`（`AUTH_STORAGE_KEY`）です。
+- 初期化時に保存済み token を検証して user を復元します。復元中は `isLoading: true`、`token: null` です。期限切れを表す `null` が返れば保存済み token を削除します。通信失敗時は保存済み token を保持して `error` を設定します。
+- signIn 成功時に token を保存し、signOut はローカルセッションと storage を先にクリアします。遅れて完了した復元や signIn が signOut 後のセッションを戻すことを防ぎます。
+- browser storage は SSR 時に読み取りが `null`、書き込み・削除が no-op です。ブラウザでの storage エラーは復元では `error`、signIn / signOut では rejected Promise として扱います。

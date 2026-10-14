@@ -76,11 +76,17 @@ describe("BridgeTransport", () => {
 
     await ready;
 
-    const promise = transport.call("sum", { a: 1 });
+    const promise = transport.call("sum", { a: 1 }, { trace: "transport" });
     await Promise.resolve();
 
     expect(bridgeWindow.postMessage).toHaveBeenCalledWith(
-      BridgeProtocol.request("1", transport.token, "sum", { a: 1 }),
+      BridgeProtocol.request(
+        "1",
+        transport.token,
+        "sum",
+        { a: 1 },
+        { trace: "transport" },
+      ),
       "*",
     );
     expect(outerWindow.postMessage).not.toHaveBeenCalled();

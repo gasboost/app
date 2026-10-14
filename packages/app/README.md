@@ -639,3 +639,27 @@ ContentService.createTextOutput();
 ## License
 
 MIT
+
+## RPC metadata
+
+RPC の業務 input と独立した `RpcMetadata = Record<string, unknown>` を middleware から参照できます。
+
+```ts
+const app = new AppsScript()
+  .use((context, next) => {
+    if (context.invocation.type === "call") {
+      const metadata = context.invocation.metadata;
+      // application middleware が独自の namespace / schema を解釈する。
+    }
+    return next();
+  })
+  .call("createEmployee", ({ name }: { name: string }) => ({ name }));
+
+await app.dispatch("createEmployee", { name: "Taro" }, {
+  "@my-app/tracing": { traceId: "trace" },
+});
+```
+
+登録された GAS global wrapper も `(input?, metadata?)` の別引数を受け取ります。metadata は call invocation ごとに保持され、`InferAppsScript` の input 型には含まれません。app 自体は metadata の内容を解釈せず、認証・token・session の schema を定義しません。既存の metadata 未指定の呼び出しは維持されます。
+
+metadata だけを付ける no-input RPC では、`AppsScriptTransport` は GAS の引数制約に合わせて `google.script.run[name](null, metadata)` を送ります（[Google の引数仕様](https://developers.google.com/apps-script/guides/html/reference/run#myfunction...)）。GAS global wrapper・`dispatch`・middleware の `invocation.input`・handler が受け取る値は `null` です。明示的な `null` 入力を維持するため、サーバー側では `undefined` に正規化しません。metadata も input も未指定なら従来通り0引数で送り、サーバーの input は `undefined` です。直接 `dispatch(name, undefined, metadata)` を呼ぶ場合も `undefined` を保持します。

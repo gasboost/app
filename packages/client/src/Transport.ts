@@ -1,7 +1,12 @@
+import type { RpcMetadata } from "./RpcMetadata";
 export type RpcResponse = {
   contents: string;
 };
 
 export interface Transport {
-  call(name: string, input?: unknown): Promise<RpcResponse>;
+  call(
+    name: string,
+    input?: unknown,
+    metadata?: RpcMetadata,
+  ): Promise<RpcResponse>;
 }

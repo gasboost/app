@@ -1,3 +1,4 @@
+import type { RpcMetadata } from "./RpcMetadata";
 import type { AppsScriptHttpRequest } from "./AppsScriptHttpRequest";
 import type { AppsScriptPostRequest } from "./AppsScriptPostRequest";
 
@@ -15,6 +16,7 @@ export type AppsScriptCallInvocation = {
   readonly type: "call";
   readonly name: string;
   readonly input: unknown;
+  readonly metadata?: RpcMetadata;
 };
 
 export type AppsScriptInvocation =

@@ -75,3 +75,20 @@ localhost parent -> GAS iframe -> HTML Service READY -> saved event.source -> go
 ```
 
 The bridge ignores unrelated Google internal messages, invalid origins, invalid tokens, and responses from any source other than the saved READY source.
+
+## RPC metadata
+
+`BridgeTransport.call(name, input?, metadata?)` は `RpcMetadata` を業務 input と別に中継します。`appsScriptClient({ transport, metadataProviders })` と per-call options の両方から利用できます。
+
+```ts
+const { client } = appsScriptClient<AppType>({
+  transport: new BridgeTransport({ deploymentId }),
+  metadataProviders: [() => ({ "@my-app/tracing": { traceId: "trace" } })],
+});
+
+await client.createEmployee({ name: "Taro", email: "taro@example.com" });
+```
+
+metadata は request envelope → iframe runtime → GAS RPC の第2引数 → `AppsScript.dispatch` → middleware へ渡されます。input に混ぜず、namespace / schema の意味も解釈しません。request の `token` は bridge の通信相関・検証用であり、RPC metadata 内の値とは独立しています。metadata 未指定の既存 request も受け付けます。FetchTransport による Vite Local RPC の受信側対応は別 Issue `gasboost/dev#60` の範囲です。
+
+metadata-only RPC の input は Bridge 内では未指定のまま中継し、最終的な `AppsScriptTransport` が GAS へ送る際に `null` に変換します。GAS 側の `invocation.input` と handler は `null` を受け取り、metadata は独立して保持します。

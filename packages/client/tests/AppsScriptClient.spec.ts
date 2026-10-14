@@ -28,7 +28,13 @@ const run = new Proxy(
 
       const name = String(property);
 
-      serverFunctions[name] ??= vi.fn();
+      serverFunctions[name] ??= vi.fn((...args: unknown[]) => {
+        if (args.some((arg) => arg === undefined)) {
+          throw new Error(
+            "google.script.run cannot send undefined positional arguments",
+          );
+        }
+      });
 
       return serverFunctions[name];
     },
@@ -396,4 +402,45 @@ describe("appsScriptClient", () => {
 
     await Promise.all(runningPromises);
   });
+});
+
+it("AppsScriptTransport forwards metadata as a separate positional argument", async () => {
+  serverFunctions = {};
+  const transport = new AppsScriptTransport();
+  const input = { a: 1, b: 2 };
+  const metadata = { "@example/tracing": { id: "trace" } };
+  const result = transport.call("sum", input, metadata);
+  expect(serverFunctions.sum).toHaveBeenCalledWith(input, metadata);
+  successHandler({ contents: "3" });
+  await expect(result).resolves.toEqual({ contents: "3" });
+  const noInput = transport.call("ping", undefined, metadata);
+  expect(serverFunctions.ping).toHaveBeenCalledWith(null, metadata);
+  successHandler({ contents: "true" });
+  await noInput;
+});
+
+it("keeps explicit null and falsy input values when sending metadata", async () => {
+  serverFunctions = {};
+  const transport = new AppsScriptTransport();
+  const metadata = { trace: "falsy" };
+  for (const input of [null, false, 0, ""]) {
+    const promise = transport.call("value", input, metadata);
+    expect(serverFunctions.value).toHaveBeenLastCalledWith(input, metadata);
+    successHandler({ contents: "true" });
+    await promise;
+  }
+});
+
+it("sends metadata-only typed RPCs with a serializable null input", async () => {
+  serverFunctions = {};
+  const metadata = { trace: "typed-no-input" };
+  const { client } = appsScriptClient<{
+    ping: { input: undefined; result: boolean };
+  }>({
+    metadataProviders: [() => metadata],
+  });
+  const promise = client.ping();
+  expect(serverFunctions.ping).toHaveBeenCalledWith(null, metadata);
+  successHandler({ contents: "true" });
+  await expect(promise).resolves.toBe(true);
 });

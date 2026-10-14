@@ -7,14 +7,13 @@ declare global {
   }
 }
 
-const { client } = appsScriptClient<
-  Record<string, { input: unknown; result: unknown }>
->();
+const { client } =
+  appsScriptClient<Record<string, { input: unknown; result: unknown }>>();
 
 const runtime = new AppsScriptBridgeRuntime({
   allowedOrigins: window.__GASBOOST_BRIDGE__.allowedOrigins,
   token: window.__GASBOOST_BRIDGE__.token,
-  call: (method, input) => client[method](input),
+  call: (method, input, metadata) => client[method](input, { metadata }),
 });
 
 runtime.start();

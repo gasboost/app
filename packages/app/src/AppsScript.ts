@@ -1,3 +1,4 @@
+import type { RpcMetadata } from "./RpcMetadata";
 import { AppsScriptContext } from "./AppsScriptContext";
 import { AppsScriptHttpRequest } from "./AppsScriptHttpRequest";
 import type { AppsScriptInvocation } from "./AppsScriptInvocation";
@@ -240,7 +241,7 @@ export class AppsScript<
     );
   }
 
-  public async dispatch(name: string, input?: unknown) {
+  public async dispatch(name: string, input?: unknown, metadata?: RpcMetadata) {
     const handler = this.functions[name];
 
     if (!handler) {
@@ -254,6 +255,7 @@ export class AppsScript<
         type: "call",
         name,
         input,
+        ...(metadata === undefined ? {} : { metadata }),
       },
       (context) => handler(input, context),
       middlewares,
@@ -315,8 +317,10 @@ export class AppsScript<
     this.functions[name] = handler;
     this.functionMiddlewares[name] = [...this.middlewares, ...middlewares];
 
-    (globalThis as Record<string, unknown>)[name] = (input?: unknown) =>
-      this.dispatch(name, input);
+    (globalThis as Record<string, unknown>)[name] = (
+      input?: unknown,
+      metadata?: RpcMetadata,
+    ) => this.dispatch(name, input, metadata);
   }
 
   private execute<TResult>(

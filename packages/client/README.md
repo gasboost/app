@@ -28,7 +28,7 @@ npm install @gasboost/client
 import { AppsScript, type InferAppsScript } from "@gasboost/app";
 
 const app = new AppsScript()
-  .call("sum", (a: number, b: number) => a + b)
+  .call("sum", ({ a, b }: { a: number; b: number }) => a + b)
   .call("getUser", async (id: string) => ({
     id,
     name: "Taro",
@@ -51,7 +51,7 @@ const { client } = appsScriptClient<AppType>();
 これにより、登録された RPC が型安全な関数として利用できます。
 
 ```ts
-const total = await client.sum(1, 2);
+const total = await client.sum({ a: 1, b: 2 });
 
 const user = await client.getUser("user-1");
 ```
@@ -59,6 +59,49 @@ const user = await client.getUser("user-1");
 引数型と戻り値型は `AppType` から推論されます。
 
 存在しない RPC や不正な引数は TypeScript 上で検出できます。
+
+## RPC metadata pipeline
+
+業務 input と独立した `RpcMetadata = Record<string, unknown>` を全 RPC へ渡せます。client は metadata の意味を解釈せず、認証対象 RPC の判定もしません。認証の namespace / schema は auth 側の adapter が所有します。
+
+```ts
+import { appsScriptClient, type MetadataProvider } from "@gasboost/client";
+
+const tracingMetadataProvider: MetadataProvider = () => ({
+  "@my-app/tracing": { traceId: crypto.randomUUID() },
+});
+
+const { client } = appsScriptClient<AppType>({
+  metadataProviders: [tracingMetadataProvider],
+});
+
+await client.sum({ a: 1, b: 2 });
+await client.sum({ a: 1, b: 2 }, {
+  metadata: { "@my-app/tracing": { traceId: "explicit-trace" } },
+});
+
+// input が undefined の RPC も従来通り0引数で呼べます。
+// metadata を渡す場合は input の位置を空けます。
+await client.ping(undefined, { metadata: { "@my-app/tracing": { traceId: "ping" } } });
+```
+
+
+metadata だけを付ける no-input RPC では、`AppsScriptTransport` は GAS の引数制約に合わせて `google.script.run[name](null, metadata)` を送ります（[Google の引数仕様](https://developers.google.com/apps-script/guides/html/reference/run#myfunction...)）。GAS global wrapper・`dispatch`・middleware の `invocation.input`・handler が受け取る値は `null` です。明示的な `null` 入力を維持するため、サーバー側では `undefined` に正規化しません。metadata も input も未指定なら従来通り0引数で送り、サーバーの input は `undefined` です。直接 `dispatch(name, undefined, metadata)` を呼ぶ場合も `undefined` を保持します。
+
+provider は Job の実行時（queue 待機後・retry 時も含む）に評価します。各 provider の結果を登録順に shallow merge し、最後に per-call metadata を合成します。同じ namespace の値は丸ごと後の値で置き換えます。深い merge は行いません。provider が返す `undefined` はスキップし、全て未指定なら metadata を省略します。input と元の metadata object は変更しません。provider の例外は Job を失敗させ、Transport は呼び出しません。
+
+`RpcCallOptions` は RPC の第2引数です。metadata は input 型にも result 型にも加わりません。
+
+既存 client に scoped provider を追加するには `withMetadataProviders` を使います。
+
+```ts
+import { withMetadataProviders } from "@gasboost/client";
+const scopedClient = withMetadataProviders(client, [tracingMetadataProvider]);
+```
+
+`appsScriptClient` が生成した client 専用です。同じ RPC 型・Transport・Job Queue を保持し、元の client や別の scoped client の provider を変更しません。合成順は元の provider → scoped provider → per-call metadata です。
+
+旧 `createAuthenticatedClient` と RPC 名リストは廃止しました。業務 handler は token を input として定義せず、必要な middleware が metadata を解釈します。
 
 ## RPC Transport
 
@@ -73,13 +116,13 @@ const { client } = appsScriptClient<AppType>();
 例えば、
 
 ```ts
-await client.sum(1, 2);
+await client.sum({ a: 1, b: 2 });
 ```
 
 はデフォルトでは対応する GAS のサーバー関数を、
 
 ```text
-google.script.run.sum(1, 2)
+google.script.run.sum({ a: 1, b: 2 })
 ```
 
 のように呼び出します。
@@ -106,17 +149,17 @@ const { client } = appsScriptClient<AppType>({
 
 ```ts
 interface Transport {
-  call(name: string, args: unknown[]): Promise<RpcResponse>;
+  call(name: string, input?: unknown, metadata?: RpcMetadata): Promise<RpcResponse>;
 }
 ```
 
 独自の `Transport` を実装することで、RPC の実行先を差し替えられます。
 
 ```ts
-import type { RpcResponse, Transport } from "@gasboost/client";
+import type { RpcMetadata, RpcResponse, Transport } from "@gasboost/client";
 
 class CustomTransport implements Transport {
-  public async call(name: string, args: unknown[]): Promise<RpcResponse> {
+  public async call(name: string, input?: unknown, metadata?: RpcMetadata): Promise<RpcResponse> {
     // 任意の RPC transport
   }
 }
@@ -156,7 +199,7 @@ POST /rpc/{rpcName}
 
 ```json
 {
-  "args": [1, 2]
+  "input": { "a": 1, "b": 2 }
 }
 ```
 
@@ -184,6 +227,10 @@ Vite、Cloud Run、Cloudflare Workers など、同じ RPC protocol を提供す�
 
 ```ts
 appsScriptClient;
+withMetadataProviders;
+RpcMetadata;
+MetadataProvider;
+RpcCallOptions;
 
 AppsScriptTransport;
 FetchTransport;
@@ -492,73 +539,12 @@ iframe History
 
 通常 React アプリケーションでは、直接利用する代わりに `@gasboost/react` の `AppsScriptRouter` を利用します。
 
-## Export
-
-現在 `@gasboost/client` から公開されている API:
-
-```ts
-appsScriptClient;
-AppsScriptJob;
-AppsScriptJobStore;
-AppsScriptHistoryPipeline;
-```
-
-## ローカル RPC について
-
-`@gasboost/vite` の `dev` plugin は、Vite Dev Server 上に Local RPC endpoint を提供します。
-
-```text
-POST /__gasboost/{rpcName}
-```
-
-ただし現在の `@gasboost/client` の RPC transport は `google.script.run` を利用します。
-
-そのため、`@gasboost/vite` の Local RPC endpoint へ自動的に transport を切り替える機能は、現在の `@gasboost/client` には含まれていません。
-
-## 責務
-
-`@gasboost/client` が担当するもの:
-
-- `AppType` に基づく型安全 RPC client
-- `google.script.run` を利用した RPC transport
-- JSON response の parse
-- RPC / 非同期処理の Job Queue
-- Job の状態管理
-- pending Job の cancel
-- Job の retry
-- Job Store の購読
-- GAS Container と iframe の History 同期
-
-React 固有の処理は `@gasboost/react` が担当します。
-
 ## 関連パッケージ
 
 - `@gasboost/app` — バックエンドと RPC 契約の定義
-- `@gasboost/vite` — GAS build と Local RPC
+- `@gasboost/bridge` — external frontend と GAS iframe 間の中継
 - `@gasboost/react` — React integration
 
 ## License
 
 MIT
-
-## 認証済み RPC client
-
-`AuthenticatedInput<T>`（`T & { token: string }`）を受け取る RPC には、session token を自動注入できます。React や storage には依存しません。
-
-```ts
-import { createAuthenticatedClient } from "@gasboost/client";
-
-// client は appsScriptClient<AppType>() の返り値に含まれる typed client。
-// createEmployee の input: { token: string; name: string; email: string }
-const authenticatedClient = createAuthenticatedClient(
-  client,
-  () => currentSessionToken,
-  ["createEmployee"],
-);
-
-await authenticatedClient.createEmployee({ name: "Taro", email: "taro@example.com" });
-```
-
-TypeScript の型は実行時に消えるため、認証対象の RPC 名を第3引数で明示します。`token: string` を必須とする RPC 名のみ指定でき、指定した RPC だけ consumer input から `token` を除きます。戻り値の型は元の client と同じです。公開 RPC の引数・関数はそのまま保持します。
-
-token provider は各呼び出し時に実行され、現在の token が元の input を変更せずに注入されます。入力に古い token が含まれていても現在の token が優先されます。token が `null` または空文字列なら、RPC を送信せず `AuthenticationRequiredError` で Promise を reject します。認証済み RPC も元の client の Transport / Job Queue を通して実行されます。

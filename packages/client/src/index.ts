@@ -1,5 +1,7 @@
 export {
   appsScriptClient,
+  withMetadataProviders,
+  type AppsScriptClient,
   type AppsScriptClientOptions,
 } from "./AppsScriptClient";
 
@@ -10,10 +12,9 @@ export type { RpcResponse, Transport } from "./Transport";
 export type { AppsScriptJob } from "./job/AppsScriptJob";
 export { AppsScriptJobStore } from "./job/AppsScriptJobStore";
 export { AppsScriptHistoryPipeline } from "./navigation/AppsScriptHistoryPipeline";
-export {
-  createAuthenticatedClient,
-  AuthenticationRequiredError,
-  type AuthenticatedClient,
-  type AuthenticatedMethod,
-  type TokenProvider,
-} from "./AuthenticatedClient";
+
+export type {
+  RpcMetadata,
+  MetadataProvider,
+  RpcCallOptions,
+} from "./RpcMetadata";
