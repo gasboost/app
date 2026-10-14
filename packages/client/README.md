@@ -540,3 +540,25 @@ React 固有の処理は `@gasboost/react` が担当します。
 ## License
 
 MIT
+
+## 認証済み RPC client
+
+`AuthenticatedInput<T>`（`T & { token: string }`）を受け取る RPC には、session token を自動注入できます。React や storage には依存しません。
+
+```ts
+import { createAuthenticatedClient } from "@gasboost/client";
+
+// client は appsScriptClient<AppType>() の返り値に含まれる typed client。
+// createEmployee の input: { token: string; name: string; email: string }
+const authenticatedClient = createAuthenticatedClient(
+  client,
+  () => currentSessionToken,
+  ["createEmployee"],
+);
+
+await authenticatedClient.createEmployee({ name: "Taro", email: "taro@example.com" });
+```
+
+TypeScript の型は実行時に消えるため、認証対象の RPC 名を第3引数で明示します。`token: string` を必須とする RPC 名のみ指定でき、指定した RPC だけ consumer input から `token` を除きます。戻り値の型は元の client と同じです。公開 RPC の引数・関数はそのまま保持します。
+
+token provider は各呼び出し時に実行され、現在の token が元の input を変更せずに注入されます。入力に古い token が含まれていても現在の token が優先されます。token が `null` または空文字列なら、RPC を送信せず `AuthenticationRequiredError` で Promise を reject します。認証済み RPC も元の client の Transport / Job Queue を通して実行されます。
