@@ -78,8 +78,14 @@ describe("AppsScriptBridge", () => {
     const run = {
       withSuccessHandler: (resolve: (value: unknown) => void) => ({
         withFailureHandler: (reject: (error: Error) => void) => ({
-          sum: (...input: unknown[]) =>
-            requests.push({ resolve, reject, input }),
+          sum: (...input: unknown[]) => {
+            if (input.some((arg) => arg === undefined)) {
+              throw new Error(
+                "google.script.run cannot send undefined positional arguments",
+              );
+            }
+            requests.push({ resolve, reject, input });
+          },
         }),
       }),
     };
@@ -132,17 +138,25 @@ describe("AppsScriptBridge", () => {
         }),
       }),
     );
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    listeners[0](
+      new MessageEvent("message", {
+        origin: "https://parent.example",
+        data: BridgeProtocol.request("3", "token", "sum"),
+      }),
+    );
+    await vi.waitFor(() => expect(requests).toHaveLength(3));
     expect(requests[0].input).toEqual([
       { a: 1, b: 2 },
       { "@example/trace": { id: "trace" } },
     ]);
     expect(requests[1].input).toEqual([
-      undefined,
+      null,
       { "@example/trace": { id: "empty-input" } },
     ]);
 
-    requests[1].reject(new Error("server failure"));
+    expect(requests[2].input).toEqual([]);
+    requests[2].reject(new Error("server failure"));
+    requests[1].resolve({ contents: "true" });
     requests[0].resolve({ contents: "3" });
     await vi.waitFor(() => {
       expect(postMessage).toHaveBeenCalledWith(
@@ -150,8 +164,12 @@ describe("AppsScriptBridge", () => {
         "https://parent.example",
       );
       expect(postMessage).toHaveBeenCalledWith(
+        BridgeProtocol.success("2", "token", true),
+        "https://parent.example",
+      );
+      expect(postMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          id: "2",
+          id: "3",
           token: "token",
           ok: false,
           error: expect.objectContaining({ message: "server failure" }),

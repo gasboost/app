@@ -85,6 +85,9 @@ await client.sum({ a: 1, b: 2 }, {
 await client.ping(undefined, { metadata: { "@my-app/tracing": { traceId: "ping" } } });
 ```
 
+
+metadata だけを付ける no-input RPC では、`AppsScriptTransport` は GAS の引数制約に合わせて `google.script.run[name](null, metadata)` を送ります（[Google の引数仕様](https://developers.google.com/apps-script/guides/html/reference/run#myfunction...)）。GAS global wrapper・`dispatch`・middleware の `invocation.input`・handler が受け取る値は `null` です。明示的な `null` 入力を維持するため、サーバー側では `undefined` に正規化しません。metadata も input も未指定なら従来通り0引数で送り、サーバーの input は `undefined` です。直接 `dispatch(name, undefined, metadata)` を呼ぶ場合も `undefined` を保持します。
+
 provider は Job の実行時（queue 待機後・retry 時も含む）に評価します。各 provider の結果を登録順に shallow merge し、最後に per-call metadata を合成します。同じ namespace の値は丸ごと後の値で置き換えます。深い merge は行いません。provider が返す `undefined` はスキップし、全て未指定なら metadata を省略します。input と元の metadata object は変更しません。provider の例外は Job を失敗させ、Transport は呼び出しません。
 
 `RpcCallOptions` は RPC の第2引数です。metadata は input 型にも result 型にも加わりません。

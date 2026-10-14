@@ -70,4 +70,52 @@ describe("RPC metadata", () => {
       delete (globalThis as Record<string, unknown>).metadataNoInput;
     }
   });
+
+  it("preserves the GAS null placeholder and explicit null input in invocation and handler", async () => {
+    const observations: Array<{ input: unknown; metadata?: RpcMetadata }> = [];
+    const metadata = { trace: "gas-no-input" };
+    const noInput = vi.fn((..._args: unknown[]) => true);
+    const explicitNull = vi.fn((input: unknown) => input);
+    const app = new AppsScript()
+      .use((context, next) => {
+        if (context.invocation.type === "call") {
+          observations.push({
+            input: context.invocation.input,
+            metadata: context.invocation.metadata,
+          });
+        }
+        return next();
+      })
+      .call("gasMetadataNoInput", noInput)
+      .call("gasMetadataNull", explicitNull);
+    const globals = globalThis as unknown as Record<
+      string,
+      (
+        input?: unknown,
+        metadata?: RpcMetadata,
+      ) => ReturnType<typeof app.dispatch>
+    >;
+    try {
+      expect((await globals.gasMetadataNoInput(null, metadata)).contents).toBe(
+        "true",
+      );
+      expect(observations[0]).toEqual({ input: null, metadata });
+      expect(noInput.mock.calls[0][0]).toBeNull();
+      expect((await globals.gasMetadataNull(null, metadata)).contents).toBe(
+        "null",
+      );
+      expect(observations[1]).toEqual({ input: null, metadata });
+      expect(explicitNull.mock.calls[0][0]).toBeNull();
+      await globals.gasMetadataNoInput();
+      expect(observations[2]).toEqual({
+        input: undefined,
+        metadata: undefined,
+      });
+      await app.dispatch("gasMetadataNoInput", undefined, metadata);
+      expect(observations[3]).toEqual({ input: undefined, metadata });
+    } finally {
+      delete (globalThis as Record<string, unknown>).gasMetadataNoInput;
+      delete (globalThis as Record<string, unknown>).gasMetadataNull;
+    }
+  });
 });

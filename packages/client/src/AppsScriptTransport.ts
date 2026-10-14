@@ -14,7 +14,9 @@ export class AppsScriptTransport implements Transport {
         .withFailureHandler(reject);
 
       if (metadata !== undefined) {
-        runner[name](input, metadata);
+        // google.script.run requires serializable positional arguments.
+        // Preserve null on the server rather than conflating it with explicit null input.
+        runner[name](input === undefined ? null : input, metadata);
         return;
       }
 
