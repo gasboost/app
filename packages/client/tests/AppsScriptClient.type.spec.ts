@@ -1,4 +1,5 @@
 import { describe, expectTypeOf, it } from "vitest";
+import type { RpcCallOptions } from "../src/RpcMetadata";
 import { appsScriptClient } from "../src/AppsScriptClient";
 
 type App = {
@@ -38,6 +39,7 @@ describe("AppsScriptClient types", () => {
           a: number;
           b: number;
         },
+        options?: RpcCallOptions,
       ]
     >();
 
@@ -48,6 +50,7 @@ describe("AppsScriptClient types", () => {
         input: {
           id: string;
         },
+        options?: RpcCallOptions,
       ]
     >();
 

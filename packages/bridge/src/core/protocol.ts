@@ -1,3 +1,4 @@
+import type { RpcMetadata } from "@gasboost/client";
 export const BRIDGE_READY_TYPE = "gasboost:bridge-ready";
 export const BRIDGE_REQUEST_TYPE = "gasboost:request";
 export const BRIDGE_RESPONSE_TYPE = "gasboost:response";
@@ -19,6 +20,7 @@ export type BridgeRequest = {
   token: string;
   method: string;
   input?: unknown;
+  metadata?: RpcMetadata;
 };
 
 export type BridgeSuccessResponse = {
@@ -52,6 +54,7 @@ export class BridgeProtocol {
     token: string,
     method: string,
     input?: unknown,
+    metadata?: RpcMetadata,
   ): BridgeRequest {
     const request: BridgeRequest = {
       type: BRIDGE_REQUEST_TYPE,
@@ -63,6 +66,8 @@ export class BridgeProtocol {
     if (input !== undefined) {
       request.input = input;
     }
+
+    if (metadata !== undefined) request.metadata = metadata;
 
     return request;
   }
@@ -114,7 +119,10 @@ export class BridgeProtocol {
     );
   }
 
-  public static isRequest(data: unknown, token?: string): data is BridgeRequest {
+  public static isRequest(
+    data: unknown,
+    token?: string,
+  ): data is BridgeRequest {
     if (
       typeof data !== "object" ||
       data === null ||
@@ -133,6 +141,10 @@ export class BridgeProtocol {
       typeof message.id === "string" &&
       typeof message.token === "string" &&
       typeof message.method === "string" &&
+      (message.metadata === undefined ||
+        (typeof message.metadata === "object" &&
+          message.metadata !== null &&
+          !Array.isArray(message.metadata))) &&
       (token === undefined || message.token === token)
     );
   }

@@ -62,7 +62,10 @@ describe("AppsScriptBridge", () => {
     const listeners: Array<(event: MessageEvent) => void> = [];
     const fakeWindow = {
       top: { postMessage },
-      addEventListener: (_type: string, listener: (event: MessageEvent) => void) => {
+      addEventListener: (
+        _type: string,
+        listener: (event: MessageEvent) => void,
+      ) => {
         listeners.push(listener);
         calls.push("listener");
       },
@@ -75,58 +78,85 @@ describe("AppsScriptBridge", () => {
     const run = {
       withSuccessHandler: (resolve: (value: unknown) => void) => ({
         withFailureHandler: (reject: (error: Error) => void) => ({
-          sum: (...input: unknown[]) => requests.push({ resolve, reject, input }),
+          sum: (...input: unknown[]) =>
+            requests.push({ resolve, reject, input }),
         }),
       }),
     };
     const page = new DOMParser().parseFromString(html, "text/html");
     for (const script of page.querySelectorAll("script")) {
-      new Function("window", "location", "globalThis", script.textContent ?? "")(
-        fakeWindow,
-        { search: "" },
-        { google: { script: { run } } },
-      );
+      new Function(
+        "window",
+        "location",
+        "globalThis",
+        script.textContent ?? "",
+      )(fakeWindow, { search: "" }, { google: { script: { run } } });
     }
 
     expect(calls).toEqual(["listener", "ready"]);
     expect(postMessage).toHaveBeenCalledWith(
-      BridgeProtocol.ready("token"), "https://parent.example",
+      BridgeProtocol.ready("token"),
+      "https://parent.example",
     );
 
     for (const [origin, token] of [
       ["https://evil.example", "token"],
       ["https://parent.example", "wrong-token"],
     ]) {
-      listeners[0](new MessageEvent("message", {
-        origin,
-        data: BridgeProtocol.request("ignored", token, "sum", { a: 1 }),
-      }));
+      listeners[0](
+        new MessageEvent("message", {
+          origin,
+          data: BridgeProtocol.request("ignored", token, "sum", { a: 1 }),
+        }),
+      );
     }
     expect(requests).toHaveLength(0);
 
-    listeners[0](new MessageEvent("message", {
-      origin: "https://parent.example",
-      data: BridgeProtocol.request("1", "token", "sum", { a: 1, b: 2 }),
-    }));
-    listeners[0](new MessageEvent("message", {
-      origin: "https://parent.example",
-      data: BridgeProtocol.request("2", "token", "sum"),
-    }));
+    listeners[0](
+      new MessageEvent("message", {
+        origin: "https://parent.example",
+        data: BridgeProtocol.request(
+          "1",
+          "token",
+          "sum",
+          { a: 1, b: 2 },
+          { "@example/trace": { id: "trace" } },
+        ),
+      }),
+    );
+    listeners[0](
+      new MessageEvent("message", {
+        origin: "https://parent.example",
+        data: BridgeProtocol.request("2", "token", "sum", undefined, {
+          "@example/trace": { id: "empty-input" },
+        }),
+      }),
+    );
     await vi.waitFor(() => expect(requests).toHaveLength(2));
-    expect(requests[0].input).toEqual([{ a: 1, b: 2 }]);
-    expect(requests[1].input).toEqual([]);
+    expect(requests[0].input).toEqual([
+      { a: 1, b: 2 },
+      { "@example/trace": { id: "trace" } },
+    ]);
+    expect(requests[1].input).toEqual([
+      undefined,
+      { "@example/trace": { id: "empty-input" } },
+    ]);
 
     requests[1].reject(new Error("server failure"));
     requests[0].resolve({ contents: "3" });
     await vi.waitFor(() => {
       expect(postMessage).toHaveBeenCalledWith(
-        BridgeProtocol.success("1", "token", 3), "https://parent.example",
+        BridgeProtocol.success("1", "token", 3),
+        "https://parent.example",
       );
       expect(postMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          id: "2", token: "token", ok: false,
+          id: "2",
+          token: "token",
+          ok: false,
           error: expect.objectContaining({ message: "server failure" }),
-        }), "https://parent.example",
+        }),
+        "https://parent.example",
       );
     });
   });

@@ -397,3 +397,18 @@ describe("appsScriptClient", () => {
     await Promise.all(runningPromises);
   });
 });
+
+it("AppsScriptTransport forwards metadata as a separate positional argument", async () => {
+  serverFunctions = {};
+  const transport = new AppsScriptTransport();
+  const input = { a: 1, b: 2 };
+  const metadata = { "@example/tracing": { id: "trace" } };
+  const result = transport.call("sum", input, metadata);
+  expect(serverFunctions.sum).toHaveBeenCalledWith(input, metadata);
+  successHandler({ contents: "3" });
+  await expect(result).resolves.toEqual({ contents: "3" });
+  const noInput = transport.call("ping", undefined, metadata);
+  expect(serverFunctions.ping).toHaveBeenCalledWith(undefined, metadata);
+  successHandler({ contents: "true" });
+  await noInput;
+});

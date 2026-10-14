@@ -1,4 +1,4 @@
-import type { RpcResponse, Transport } from "@gasboost/client";
+import type { RpcResponse, RpcMetadata, Transport } from "@gasboost/client";
 import {
   BridgeDisposedError,
   BridgeIframeLoadError,
@@ -52,7 +52,8 @@ export class BridgeTransport implements Transport {
     this.window = options.window ?? window;
     this.document = options.document ?? document;
     this.targetOrigin = options.targetOrigin ?? "*";
-    this.token = this.window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    this.token =
+      this.window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
     this.onMessage = (event) => {
       this.handleMessage(event);
     };
@@ -61,7 +62,11 @@ export class BridgeTransport implements Transport {
     };
   }
 
-  public call(name: string, input?: unknown): Promise<RpcResponse> {
+  public call(
+    name: string,
+    input?: unknown,
+    metadata?: RpcMetadata,
+  ): Promise<RpcResponse> {
     if (this.disposed) {
       return Promise.reject(new BridgeDisposedError());
     }
@@ -87,7 +92,7 @@ export class BridgeTransport implements Transport {
           });
 
           this.bridgeWindow.postMessage(
-            BridgeProtocol.request(id, this.token, name, input),
+            BridgeProtocol.request(id, this.token, name, input, metadata),
             this.targetOrigin,
           );
         }),

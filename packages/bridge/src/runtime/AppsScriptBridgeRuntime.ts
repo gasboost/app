@@ -1,8 +1,10 @@
+import type { RpcMetadata } from "@gasboost/client";
 import { BridgeProtocol } from "../core/protocol";
 
 export type AppsScriptBridgeRuntimeCall = (
   method: string,
   input: unknown,
+  metadata?: RpcMetadata,
 ) => Promise<unknown> | unknown;
 
 export interface AppsScriptBridgeRuntimeOptions {
@@ -65,7 +67,14 @@ export class AppsScriptBridgeRuntime {
     }
 
     try {
-      const result = await this.call(event.data.method, event.data.input);
+      const result =
+        event.data.metadata === undefined
+          ? await this.call(event.data.method, event.data.input)
+          : await this.call(
+              event.data.method,
+              event.data.input,
+              event.data.metadata,
+            );
       this.window.top?.postMessage(
         BridgeProtocol.success(event.data.id, this.token, result),
         event.origin,

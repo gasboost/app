@@ -1,12 +1,22 @@
+import type { RpcMetadata } from "./RpcMetadata";
 import { google } from "./google";
 import type { RpcResponse, Transport } from "./Transport";
 
 export class AppsScriptTransport implements Transport {
-  public call(name: string, input?: unknown): Promise<RpcResponse> {
+  public call(
+    name: string,
+    input?: unknown,
+    metadata?: RpcMetadata,
+  ): Promise<RpcResponse> {
     return new Promise((resolve, reject) => {
       const runner = google.script.run
         .withSuccessHandler(resolve)
         .withFailureHandler(reject);
+
+      if (metadata !== undefined) {
+        runner[name](input, metadata);
+        return;
+      }
 
       if (input === undefined) {
         runner[name]();

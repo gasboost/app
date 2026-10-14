@@ -196,3 +196,29 @@ describe("FetchTransport", () => {
     );
   });
 });
+
+it("FetchTransport serializes input and metadata separately, including metadata-only calls", async () => {
+  const fetchMock = vi.fn(async () => new Response("true", { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const transport = new FetchTransport({ endpoint: "/rpc" });
+    const input = { name: "Taro" };
+    const metadata = { "@example/tracing": { id: "trace" } };
+    await transport.call("business", input, metadata);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/rpc/business",
+      expect.objectContaining({
+        body: JSON.stringify({ input, metadata }),
+      }),
+    );
+    await transport.call("ping", undefined, metadata);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/rpc/ping",
+      expect.objectContaining({
+        body: JSON.stringify({ metadata }),
+      }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

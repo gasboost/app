@@ -39,7 +39,6 @@ export interface AuthProviderProps<TUser, TCredentials> {
 }
 
 const AuthContext = createContext<AuthState<unknown, unknown> | null>(null);
-const AuthTokenContext = createContext<(() => string | null) | null>(null);
 
 export function AuthProvider<TUser, TCredentials>({
   adapter,
@@ -114,8 +113,6 @@ export function AuthProvider<TUser, TCredentials>({
     if (token) await adapter.signOut?.(token);
   }, [adapter, activeStorage, updateSession]);
 
-  const getToken = useCallback(() => sessionRef.current?.token ?? null, []);
-
   const value = useMemo(
     () => ({
       user: session?.user ?? null,
@@ -131,9 +128,7 @@ export function AuthProvider<TUser, TCredentials>({
 
   return (
     <AuthContext.Provider value={value as AuthState<unknown, unknown>}>
-      <AuthTokenContext.Provider value={getToken}>
-        {children}
-      </AuthTokenContext.Provider>
+      {children}
     </AuthContext.Provider>
   );
 }
@@ -145,12 +140,4 @@ export function useAuth<TUser = unknown, TCredentials = unknown>(): AuthState<
   const value = useContext(AuthContext);
   if (!value) throw new Error("useAuth must be used within AuthProvider.");
   return value as AuthState<TUser, TCredentials>;
-}
-
-// Internal bridge: read committed session changes immediately, including before a rerender.
-export function useAuthTokenProvider(): () => string | null {
-  const getToken = useContext(AuthTokenContext);
-  if (!getToken)
-    throw new Error("AppsScriptProvider must be used within AuthProvider.");
-  return getToken;
 }

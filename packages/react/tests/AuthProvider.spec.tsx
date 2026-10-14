@@ -4,9 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AuthProvider,
   useAuth,
-  AppsScriptProvider,
-  useAppsScript,
-  createAppsScriptContext,
   createMemoryAuthStorage,
   memoryAuthStorage,
   localStorageAuthStorage,
@@ -175,126 +172,6 @@ describe("AuthStorage", () => {
       expect(storage.get()).toBeNull();
     });
   }
-});
-
-describe("AppsScriptProvider", () => {
-  it("reuses the client and reads the latest token after signIn/signOut", async () => {
-    const client = {
-      create: vi.fn(async (_input: { token: string; name: string }) => 1),
-      public: vi.fn(async (_input: { name: string }) => "public"),
-    };
-    const methods = ["create"] as const;
-    const auth = adapter();
-    const { result } = renderHook(
-      () => ({
-        auth: useAuth<User, string>(),
-        client: useAppsScript<typeof client, "create">(),
-      }),
-      {
-        wrapper: ({ children }) => (
-          <AuthProvider adapter={auth}>
-            <AppsScriptProvider client={client} authenticatedMethods={methods}>
-              {children}
-            </AppsScriptProvider>
-          </AuthProvider>
-        ),
-      },
-    );
-    const savedClient = result.current.client;
-    await savedClient.public({ name: "Taro" });
-    expect(client.public).toHaveBeenCalledWith({ name: "Taro" });
-    await expect(savedClient.create({ name: "Taro" })).rejects.toThrow(
-      "session token",
-    );
-    await act(() => result.current.auth.signIn("first"));
-    expect(result.current.client).toBe(savedClient);
-    await savedClient.create({ name: "Taro" });
-    expect(client.create).toHaveBeenLastCalledWith({
-      name: "Taro",
-      token: "first",
-    });
-    await act(() => result.current.auth.signIn("second"));
-    await savedClient.create({ name: "Taro" });
-    expect(client.create).toHaveBeenLastCalledWith({
-      name: "Taro",
-      token: "second",
-    });
-    await act(() => result.current.auth.signOut());
-    await expect(savedClient.create({ name: "Taro" })).rejects.toThrow(
-      "session token",
-    );
-    expect(client.create).toHaveBeenCalledTimes(2);
-  });
-
-  it("requires the corresponding providers", () => {
-    expect(() => renderHook(() => useAuth())).toThrow("AuthProvider");
-    expect(() => renderHook(() => useAppsScript<object>())).toThrow(
-      "AppsScriptProvider",
-    );
-  });
-});
-
-it("binds types and keeps separate Apps Script contexts isolated", async () => {
-  const first = {
-    call: vi.fn(async (_input: { token: string; value: number }) => 1),
-  };
-  const second = {
-    call: vi.fn(async (_input: { token: string; value: number }) => 2),
-  };
-  const a = createAppsScriptContext(first, ["call"]);
-  const b = createAppsScriptContext(second, ["call"]);
-  const auth = adapter();
-  const { result } = renderHook(
-    () => ({
-      auth: useAuth<User, string>(),
-      a: a.useAppsScript(),
-      b: b.useAppsScript(),
-    }),
-    {
-      wrapper: ({ children }) => (
-        <AuthProvider adapter={auth}>
-          <a.AppsScriptProvider>
-            <b.AppsScriptProvider>{children}</b.AppsScriptProvider>
-          </a.AppsScriptProvider>
-        </AuthProvider>
-      ),
-    },
-  );
-  await act(() => result.current.auth.signIn("token"));
-  expect(await result.current.a.call({ value: 1 })).toBe(1);
-  expect(await result.current.b.call({ value: 2 })).toBe(2);
-  expect(first.call).toHaveBeenCalledWith({ value: 1, token: "token" });
-  expect(second.call).toHaveBeenCalledWith({ value: 2, token: "token" });
-  if (false) {
-    // @ts-expect-error Business input is required on the bound hook
-    result.current.a.call({});
-    // @ts-expect-error Caller token is not exposed
-    result.current.a.call({ value: 1, token: "caller" });
-  }
-});
-
-it("updates an already-held client immediately before React rerenders", async () => {
-  const client = { call: vi.fn(async (_input: { token: string }) => 1) };
-  const binding = createAppsScriptContext(client, ["call"]);
-  const auth = adapter();
-  const { result } = renderHook(
-    () => ({ auth: useAuth<User, string>(), client: binding.useAppsScript() }),
-    {
-      wrapper: ({ children }) => (
-        <AuthProvider adapter={auth}>
-          <binding.AppsScriptProvider>{children}</binding.AppsScriptProvider>
-        </AuthProvider>
-      ),
-    },
-  );
-  const held = result.current;
-  await act(async () => {
-    await held.auth.signIn("new");
-    await held.client.call({});
-    expect(client.call).toHaveBeenCalledWith({ token: "new" });
-    await held.auth.signOut();
-    await expect(held.client.call({})).rejects.toThrow("session token");
-  });
 });
 
 it("ignores out-of-order signIn and signIn completion after unmount", async () => {

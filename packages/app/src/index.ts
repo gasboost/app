@@ -11,3 +11,5 @@ export type {
 export type { AppsScriptMiddleware } from "./AppsScriptMiddleware";
 
 export { AppsScriptState, type StateMap } from "./AppsScriptState";
+
+export type { RpcMetadata } from "./RpcMetadata";

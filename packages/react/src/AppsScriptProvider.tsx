@@ -1,35 +1,34 @@
-import {
-  createAuthenticatedClient,
-  type AuthenticatedClient,
-  type AuthenticatedMethod,
-} from "@gasboost/client";
+import { withMetadataProviders, type MetadataProvider } from "@gasboost/client";
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { useAuthTokenProvider } from "./AuthProvider";
 
 const AppsScriptContext = createContext<object | null>(null);
+const NO_METADATA_PROVIDERS: readonly MetadataProvider[] = [];
 
-export interface AppsScriptProviderProps<
-  TClient extends object,
-  TMethod extends AuthenticatedMethod<TClient>,
-> {
+export interface AppsScriptProviderProps<TClient extends object> {
   client: TClient;
-  authenticatedMethods: readonly TMethod[];
+  metadataProviders?: readonly MetadataProvider[];
   children: ReactNode;
 }
 
-export function AppsScriptProvider<
-  TClient extends object,
-  const TMethod extends AuthenticatedMethod<TClient>,
->({
-  client,
-  authenticatedMethods,
-  children,
-}: AppsScriptProviderProps<TClient, TMethod>) {
-  const getToken = useAuthTokenProvider();
-  const value = useMemo(
-    () => createAuthenticatedClient(client, getToken, authenticatedMethods),
-    [client, getToken, authenticatedMethods],
+function useProvidedClient<TClient extends object>(
+  client: TClient,
+  providers: readonly MetadataProvider[],
+): TClient {
+  return useMemo(
+    () =>
+      providers.length === 0
+        ? client
+        : withMetadataProviders(client, providers),
+    [client, providers],
   );
+}
+
+export function AppsScriptProvider<TClient extends object>({
+  client,
+  metadataProviders = NO_METADATA_PROVIDERS,
+  children,
+}: AppsScriptProviderProps<TClient>) {
+  const value = useProvidedClient(client, metadataProviders);
   return (
     <AppsScriptContext.Provider value={value}>
       {children}
@@ -37,36 +36,28 @@ export function AppsScriptProvider<
   );
 }
 
-/** Context cannot infer the backend contract; supply the typed client explicitly. */
-export function useAppsScript<
-  TClient extends object,
-  TMethod extends AuthenticatedMethod<TClient> = never,
->(): AuthenticatedClient<TClient, TMethod> {
+export function useAppsScript<TClient extends object>(): TClient {
   const client = useContext(AppsScriptContext);
   if (!client)
     throw new Error("useAppsScript must be used within AppsScriptProvider.");
-  return client as AuthenticatedClient<TClient, TMethod>;
+  return client as TClient;
 }
 
-/** Bind a client contract once so consumers can call useAppsScript() without generics. */
-export function createAppsScriptContext<
-  TClient extends object,
-  const TMethod extends AuthenticatedMethod<TClient>,
->(client: TClient, authenticatedMethods: readonly TMethod[]) {
-  const Context = createContext<AuthenticatedClient<TClient, TMethod> | null>(
-    null,
-  );
+/** Bind the client contract once so consumers can call useAppsScript() without generics. */
+export function createAppsScriptContext<TClient extends object>(
+  client: TClient,
+) {
+  const Context = createContext<TClient | null>(null);
 
-  function Provider({ children }: { children: ReactNode }) {
-    const getToken = useAuthTokenProvider();
-    const value = useMemo(
-      () => createAuthenticatedClient(client, getToken, authenticatedMethods),
-      [getToken],
-    );
+  function Provider({
+    children,
+    metadataProviders = NO_METADATA_PROVIDERS,
+  }: Omit<AppsScriptProviderProps<TClient>, "client">) {
+    const value = useProvidedClient(client, metadataProviders);
     return <Context.Provider value={value}>{children}</Context.Provider>;
   }
 
-  function useClient(): AuthenticatedClient<TClient, TMethod> {
+  function useClient(): TClient {
     const value = useContext(Context);
     if (!value)
       throw new Error(
