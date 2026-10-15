@@ -1,143 +1,106 @@
+import type { AuthClient, AuthSession } from "@gasboost/auth-client";
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { createMemoryAuthStorage, type AuthStorage } from "./AuthStorage";
 
-export interface AuthSession<TUser> {
-  user: TUser;
-  token: string;
-}
+type Client = AuthClient<AuthSession, never, never>;
+type Actions<TClient> = {
+  [K in keyof TClient as TClient[K] extends (...args: never[]) => Promise<unknown>
+    ? K
+    : never]: TClient[K];
+};
 
-export interface AuthAdapter<TUser, TCredentials> {
-  signIn(credentials: TCredentials): Promise<AuthSession<TUser>>;
-  /** Validate the saved token and return the current user, or null if expired. */
-  restoreSession(token: string): Promise<TUser | null>;
-  signOut?(token: string): Promise<void>;
-}
+/** Bind a framework-independent AuthClient to its own React context. */
+export function createAuthContext<TClient extends Client>(auth: TClient) {
+  type Value = ReturnType<TClient["getState"]> & Actions<TClient> & {
+    isLoading: boolean;
+    error: unknown;
+  };
+  const Context = createContext<Value | null>(null);
+  // Concurrent mounts (including StrictMode) share the initial restore request.
+  let restoration: Promise<unknown> | undefined;
+  const restore = () => {
+    restoration ??= auth.restoreSession().finally(() => {
+      restoration = undefined;
+    });
+    return restoration;
+  };
+  const subscribe = (listener: () => void) => auth.subscribe(listener);
+  const getSnapshot = () => auth.getState() as ReturnType<TClient["getState"]>;
 
-export interface AuthState<TUser, TCredentials> {
-  user: TUser | null;
-  token: string | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  error: unknown;
-  signIn(credentials: TCredentials): Promise<void>;
-  signOut(): Promise<void>;
-}
-
-export interface AuthProviderProps<TUser, TCredentials> {
-  adapter: AuthAdapter<TUser, TCredentials>;
-  storage?: AuthStorage;
-  children: ReactNode;
-}
-
-const AuthContext = createContext<AuthState<unknown, unknown> | null>(null);
-
-export function AuthProvider<TUser, TCredentials>({
-  adapter,
-  storage,
-  children,
-}: AuthProviderProps<TUser, TCredentials>) {
-  const [memory] = useState(createMemoryAuthStorage);
-  const activeStorage = storage ?? memory;
-  const [session, setSession] = useState<AuthSession<TUser> | null>(null);
-  const sessionRef = useRef(session);
-  const revision = useRef(0);
-  const [isLoading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown>(null);
-  const updateSession = useCallback((value: AuthSession<TUser> | null) => {
-    sessionRef.current = value;
-    setSession(value);
-  }, []);
-
-  useEffect(() => {
-    const current = ++revision.current;
-    updateSession(null);
-    setLoading(true);
-    setError(null);
-    void (async () => {
-      try {
-        const token = activeStorage.get();
-        if (!token) return;
-        const user = await adapter.restoreSession(token);
-        if (revision.current !== current) return;
-        if (user === null) activeStorage.remove();
-        else updateSession({ user, token });
-      } catch (cause) {
-        if (revision.current === current) setError(cause);
-      } finally {
-        if (revision.current === current) setLoading(false);
-      }
-    })();
-    return () => {
-      ++revision.current;
-    };
-  }, [adapter, activeStorage, updateSession]);
-
-  const signIn = useCallback(
-    async (credentials: TCredentials) => {
-      const current = ++revision.current;
-      setLoading(true);
+  function AuthProvider({ children }: { children: ReactNode }) {
+    const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+    const [pending, setPending] = useState(0);
+    const [isRestoring, setRestoring] = useState(true);
+    const [error, setError] = useState<unknown>(null);
+    const run = useCallback(async (operation: () => Promise<unknown>) => {
+      setPending((count) => count + 1);
       setError(null);
       try {
-        const next = await adapter.signIn(credentials);
-        if (revision.current !== current) return;
-        if (!next.token)
-          throw new Error("signIn must return a non-empty session token.");
-        activeStorage.set(next.token);
-        updateSession(next);
+        return await operation();
       } catch (cause) {
-        if (revision.current === current) setError(cause);
+        setError(cause);
         throw cause;
       } finally {
-        if (revision.current === current) setLoading(false);
+        setPending((count) => count - 1);
       }
-    },
-    [adapter, activeStorage, updateSession],
-  );
+    }, []);
 
-  const signOut = useCallback(async () => {
-    ++revision.current;
-    const token = sessionRef.current?.token;
-    updateSession(null);
-    setLoading(false);
-    setError(null);
-    activeStorage.remove();
-    if (token) await adapter.signOut?.(token);
-  }, [adapter, activeStorage, updateSession]);
+    const actions = useMemo(() => {
+      // The root contract owns these four async actions. Additional async actions
+      // are forwarded without knowing transport-specific names or signatures.
+      const stateMethods = new Set([
+        "getState",
+        "getSession",
+        "getUser",
+        "getToken",
+        "subscribe",
+      ]);
+      return Object.fromEntries(
+        Object.entries(auth)
+          .filter(([key, method]) =>
+            !stateMethods.has(key) && typeof method === "function",
+          )
+          .map(([key, method]) => {
+            const action = method as (...args: unknown[]) => Promise<unknown>;
+            return [key, (...args: unknown[]) => run(() => action.apply(auth, args))];
+          }),
+      ) as Actions<TClient>;
+    }, [run]);
 
-  const value = useMemo(
-    () => ({
-      user: session?.user ?? null,
-      token: session?.token ?? null,
-      isAuthenticated: session !== null,
-      isLoading,
-      error,
-      signIn,
-      signOut,
-    }),
-    [session, isLoading, error, signIn, signOut],
-  );
+    useEffect(() => {
+      let active = true;
+      void run(restore)
+        .catch(() => {
+          // The error is exposed through context.
+        })
+        .finally(() => {
+          if (active) setRestoring(false);
+        });
+      return () => {
+        active = false;
+      };
+    }, [run]);
 
-  return (
-    <AuthContext.Provider value={value as AuthState<unknown, unknown>}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
+    const value = useMemo(
+      () => ({ ...snapshot, ...actions, isLoading: isRestoring || pending > 0, error }),
+      [snapshot, actions, isRestoring, pending, error],
+    );
+    return <Context.Provider value={value}>{children}</Context.Provider>;
+  }
 
-export function useAuth<TUser = unknown, TCredentials = unknown>(): AuthState<
-  TUser,
-  TCredentials
-> {
-  const value = useContext(AuthContext);
-  if (!value) throw new Error("useAuth must be used within AuthProvider.");
-  return value as AuthState<TUser, TCredentials>;
+  function useAuth(): Value {
+    const value = useContext(Context);
+    if (!value) throw new Error("useAuth must be used within its AuthProvider.");
+    return value;
+  }
+
+  return { AuthProvider, useAuth };
 }
