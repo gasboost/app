@@ -201,6 +201,44 @@ middleware 2 after
 middleware 1 after
 ```
 
+### GET / POST のルート固有 middleware
+
+`.get(handler, middlewares?)` / `.post(handler, middlewares?)` の第2引数に、`.call()` と同じ middleware 配列を指定できます。省略時は従来どおりです。
+
+```ts
+import { AppsScript, type AppsScriptMiddleware } from "@gasboost/app";
+
+type SystemStatusState = {
+  initialized: boolean;
+  appsScriptSettingsUrl: string;
+};
+
+const systemStatus: AppsScriptMiddleware<{}, SystemStatusState> = (context, next) => {
+  const properties = PropertiesService.getScriptProperties();
+  context.state.set("initialized", properties.getProperty("BOOTSTRAPPED") === "true");
+  context.state.set(
+    "appsScriptSettingsUrl",
+    `https://script.google.com/home/projects/${ScriptApp.getScriptId()}/settings`,
+  );
+  return next();
+};
+
+const app = new AppsScript()
+  .get((_request, context) => {
+    const template = HtmlService.createTemplateFromFile("index");
+    template.ssr = JSON.stringify({
+      initialized: context.state.get("initialized"), // boolean
+      appsScriptSettingsUrl: context.state.get("appsScriptSettingsUrl"), // string
+    });
+    return template.evaluate();
+  }, [systemStatus])
+  .post((request) => ContentService.createTextOutput(request.text()));
+```
+
+実行順は、ルート登録時点までの `.use()` → ルート固有 middleware → handler です。後から追加した `.use()` は既登録の GET / POST へ遡及しません。ルート固有 middleware は他の GET / POST / RPC へ適用されず、その State の型も伝播しません。
+
+配列の順序に沿って State の依存関係を検証し、各 middleware が保証する State を handler の Context へ推論します。必要な State がまだ保証されていない順序は型エラーになります。同じ invocation の Context / State を共有し、`next()` を呼ばない場合は後続と handler を実行せず、その middleware の返却値を返します。
+
 ### Context
 
 `AppsScriptContext` から現在の invocation に紐づく State と invocation 情報を取得できます。
