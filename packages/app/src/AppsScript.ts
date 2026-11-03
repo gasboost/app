@@ -93,8 +93,9 @@ export class AppsScript<
   TFunctions extends RpcMap = {},
   TGuaranteedState extends StateMap = {},
 > {
-  private doGetHandler: DoGetHandler<TState, TGuaranteedState> | null = null;
-  private doPostHandler: DoPostHandler<TState, TGuaranteedState> | null = null;
+  // Route-local state is checked at registration and erased for shared dispatch.
+  private doGetHandler: DoGetHandler<any, any> | null = null;
+  private doPostHandler: DoPostHandler<any, any> | null = null;
 
   private functions: Record<string, RpcHandler> = {};
 
@@ -108,9 +109,28 @@ export class AppsScript<
     AppsScriptMiddleware<any, any>[]
   > = {};
 
-  public get(handler: DoGetHandler<TState, TGuaranteedState>): this {
+  public get(
+    handler: DoGetHandler<TState, TGuaranteedState>,
+    middlewares?: undefined,
+  ): this;
+
+  public get<
+    TMiddlewares extends readonly AppsScriptMiddleware<any, any>[],
+  >(
+    handler: DoGetHandler<
+      TState & MiddlewareChainOutput<TGuaranteedState, TMiddlewares>,
+      MiddlewareChainOutput<TGuaranteedState, TMiddlewares>
+    >,
+    middlewares: readonly [...TMiddlewares] &
+      ValidMiddlewareChain<TGuaranteedState, TMiddlewares>,
+  ): this;
+
+  public get(
+    handler: DoGetHandler<any, any>,
+    middlewares: readonly AppsScriptMiddleware<any, any>[] = [],
+  ): this {
     this.doGetHandler = handler;
-    this.doGetMiddlewares = [...this.middlewares];
+    this.doGetMiddlewares = [...this.middlewares, ...middlewares];
 
     (globalThis as Record<string, unknown>).doGet = (
       event: GoogleAppsScript.Events.AppsScriptHttpRequestEvent,
@@ -119,9 +139,28 @@ export class AppsScript<
     return this;
   }
 
-  public post(handler: DoPostHandler<TState, TGuaranteedState>): this {
+  public post(
+    handler: DoPostHandler<TState, TGuaranteedState>,
+    middlewares?: undefined,
+  ): this;
+
+  public post<
+    TMiddlewares extends readonly AppsScriptMiddleware<any, any>[],
+  >(
+    handler: DoPostHandler<
+      TState & MiddlewareChainOutput<TGuaranteedState, TMiddlewares>,
+      MiddlewareChainOutput<TGuaranteedState, TMiddlewares>
+    >,
+    middlewares: readonly [...TMiddlewares] &
+      ValidMiddlewareChain<TGuaranteedState, TMiddlewares>,
+  ): this;
+
+  public post(
+    handler: DoPostHandler<any, any>,
+    middlewares: readonly AppsScriptMiddleware<any, any>[] = [],
+  ): this {
     this.doPostHandler = handler;
-    this.doPostMiddlewares = [...this.middlewares];
+    this.doPostMiddlewares = [...this.middlewares, ...middlewares];
 
     (globalThis as Record<string, unknown>).doPost = (
       event: GoogleAppsScript.Events.DoPost,
