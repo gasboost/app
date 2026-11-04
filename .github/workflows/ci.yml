@@ -38,6 +38,39 @@ jobs:
       - name: Build app
         run: pnpm --filter @gasboost/app build
 
+      - name: Typecheck bootstrap
+        run: pnpm --filter @gasboost/bootstrap typecheck
+
+      - name: Test bootstrap
+        run: pnpm --filter @gasboost/bootstrap test
+
+      - name: Build bootstrap
+        run: pnpm --filter @gasboost/bootstrap build
+
+      - name: Checkout Auth bootstrap dependency
+        uses: actions/checkout@v4
+        with:
+          repository: gasboost/auth
+          # auth#49: pin the API used by the integration test, including recovery fixes.
+          ref: 9b15a42587fe15c5f7c3fc97112df3ffd88272b4
+          path: .bootstrap-auth
+          persist-credentials: false
+
+      - name: Build Auth bootstrap dependency
+        working-directory: .bootstrap-auth
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @gasboost/auth build
+          pnpm --filter @gasboost/auth-sheetorm build
+
+      - name: Integration test bootstrap with Auth and SheetORM
+        env:
+          GASBOOST_AUTH_WORKSPACE: ${{ github.workspace }}/.bootstrap-auth
+        run: pnpm --filter @gasboost/bootstrap test:integration
+
+      - name: Pack bootstrap
+        run: pnpm --filter @gasboost/bootstrap pack
+
       - name: Typecheck client
         run: pnpm --filter @gasboost/client typecheck
 
@@ -67,6 +100,9 @@ jobs:
 
       - name: Pack app
         run: pnpm --filter @gasboost/app pack
+
+      - name: Smoke test bootstrap package
+        run: pnpm --filter @gasboost/bootstrap smoke
 
       - name: Pack client
         run: pnpm --filter @gasboost/client pack

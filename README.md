@@ -11,6 +11,7 @@ Google Apps Script 固有のグローバル関数、RPC、ブラウザとの通�
 | `@gasboost/app`    | GET / POST / RPC を定義するバックエンドランタイム |
 | `@gasboost/client` | 型安全な RPC クライアントと非同期 Job 管理        |
 | `@gasboost/react`  | React Router / Job 状態との統合                   |
+| `@gasboost/bootstrap` | 初回起動時の migration・管理者登録・ロール付与 |
 
 ビルドとローカル開発のための `@gasboost/vite` は
 [gasboost/dev](https://github.com/gasboost/dev) で管理されています。
