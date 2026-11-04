@@ -28,6 +28,7 @@ const { SheetOrmAuthRepository, SheetOrmAuthorizationRepository } =
   requireAdapter("./dist/index.js");
 const { SheetDB, SheetTable } = requireAdapter("@gasboost/sheetorm");
 const { NodeUtilities } = requireCore("@gasboost/fake-node");
+const { NodeLockService } = requireAdapter("@gasboost/fake-node");
 const { InMemoryCacheService } = requireCore("@gasboost/fake-core");
 
 // Real Auth and DB APIs, in-memory sheet gateway; no Google services or mail are contacted.
@@ -103,6 +104,10 @@ for (const [emailPassword, appsScript] of [
       gateway: new Gateway(),
       cacheService,
       utilities,
+      lockService: new NodeLockService({
+        scriptId: utilities.getUuid(),
+        userId: "admin",
+      }),
     });
     let raw = null;
     const propertiesService = {

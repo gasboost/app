@@ -52,7 +52,7 @@ jobs:
         with:
           repository: gasboost/auth
           # auth#49: pin the API used by the integration test, including recovery fixes.
-          ref: 4f241cef4db870b68f8791cc05ebba079c11c331
+          ref: 9b15a42587fe15c5f7c3fc97112df3ffd88272b4
           path: .bootstrap-auth
           persist-credentials: false
 
