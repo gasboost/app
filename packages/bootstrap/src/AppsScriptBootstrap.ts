@@ -1,7 +1,12 @@
 import type { AppsScriptMiddleware } from "@gasboost/app";
 import type { AppState, BootstrapOptions, BootstrapPublicState } from "./types";
 
+type BootstrapStep =
+  "migrated" | "registered" | "roleAssigned" | "notified" | "hookCompleted";
+
 export class AppsScriptBootstrap {
+  // Exceeds the GAS Web App runtime limit (6 min); do not renew from a running request.
+  private static readonly LEASE_MS = 10 * 60_000;
   public readonly KEY = "bootstrap" as const;
   private readonly digits: number;
   private readonly ttl: number;
@@ -71,12 +76,68 @@ export class AppsScriptBootstrap {
   private async initialize(input: {
     token: string;
   }): Promise<BootstrapPublicState> {
-    const lock = LockService.getScriptLock();
-    lock.waitLock(30_000);
+    const { leaseId, administrator, methods } = this.acquire(input);
     try {
+      await this.step(leaseId, "migrated", async () => {
+        if (this.options.overrides?.migrate)
+          await this.options.overrides.migrate(administrator);
+        else await this.options.db.migrate();
+      });
+      await this.step(leaseId, "registered", async () => {
+        const user = this.options.overrides?.registerAdministrator
+          ? await this.options.overrides.registerAdministrator(administrator)
+          : await this.options.auth.registration.ensure({
+              ...administrator,
+              ...(methods.emailPassword
+                ? { password: Utilities.getUuid() + Utilities.getUuid() }
+                : {}),
+            });
+        if (user.id !== administrator.id)
+          throw new Error("Registration must preserve the bootstrap user ID");
+      });
+      await this.step(leaseId, "roleAssigned", async () => {
+        if (this.options.overrides?.assignRole)
+          await this.options.overrides.assignRole(administrator);
+        else
+          await this.options.authorization.role.assign(
+            administrator.id,
+            administrator.role,
+          );
+      });
+      await this.step(leaseId, "notified", async () => {
+        if (this.options.overrides?.notify)
+          await this.options.overrides.notify(administrator);
+        else if (methods.emailPassword)
+          await this.options.auth.password!.forgot({
+            email: administrator.email,
+          });
+      });
+      await this.step(leaseId, "hookCompleted", async () => {
+        await this.options.afterInitialize?.(administrator);
+      });
+      this.withLease(leaseId, () => this.write({ initialized: true }));
+      return { initialized: true };
+    } finally {
+      this.withScriptLock(() => {
+        const state = this.read();
+        // A stale execution must never release a successor's lease.
+        if (state.lease?.id !== leaseId) return;
+        delete state.lease;
+        this.write(state);
+      });
+    }
+  }
+
+  private acquire(input: { token: string }) {
+    return this.withScriptLock(() => {
       const state = this.read();
       if (state.initialized)
         throw new Error("Application is already initialized");
+      if (state.lease && state.lease.expiresAt > Date.now()) {
+        throw new Error(
+          "Bootstrap initialization is already in progress; retry later",
+        );
+      }
       const challenge = state.bootstrap;
       if (!challenge)
         throw new Error("Open the application to issue a bootstrap token");
@@ -119,7 +180,6 @@ export class AppsScriptBootstrap {
           },
           methods: { ...methods },
         };
-        this.write(state);
       }
       const progress = state.progress;
       if (progress.administrator.email !== email)
@@ -132,54 +192,59 @@ export class AppsScriptBootstrap {
           "Restore the original authentication configuration before retrying bootstrap",
         );
       }
-      const administrator = Object.freeze({ ...progress.administrator });
-      if (!progress.migrated) {
-        if (this.options.overrides?.migrate)
-          await this.options.overrides.migrate(administrator);
-        else await this.options.db.migrate();
-        progress.migrated = true;
-        this.write(state);
+      const leaseId = Utilities.getUuid();
+      state.lease = {
+        id: leaseId,
+        expiresAt: Date.now() + AppsScriptBootstrap.LEASE_MS,
+      };
+      // Commit the fixed administrator ID and lease before any external work.
+      this.write(state);
+      return {
+        leaseId,
+        administrator: Object.freeze({ ...progress.administrator }),
+        methods: { ...progress.methods },
+      };
+    });
+  }
+
+  private async step(
+    leaseId: string,
+    step: BootstrapStep,
+    run: () => Promise<void>,
+  ): Promise<void> {
+    if (this.withLease(leaseId, (_state, progress) => progress[step])) return;
+    // No native lock across DB/Auth/notification/hook calls: SheetORM v4 uses ScriptLock itself.
+    await run();
+    this.withLease(leaseId, (state, progress) => {
+      progress[step] = true;
+      this.write(state);
+    });
+  }
+
+  private withLease<T>(
+    leaseId: string,
+    run: (state: AppState, progress: NonNullable<AppState["progress"]>) => T,
+  ): T {
+    return this.withScriptLock(() => {
+      const state = this.read();
+      if (
+        state.initialized ||
+        state.lease?.id !== leaseId ||
+        state.lease.expiresAt <= Date.now() ||
+        !state.progress
+      ) {
+        throw new Error("Bootstrap execution lease was lost or expired");
       }
-      if (!progress.registered) {
-        const user = this.options.overrides?.registerAdministrator
-          ? await this.options.overrides.registerAdministrator(administrator)
-          : await this.options.auth.registration.ensure({
-              ...administrator,
-              ...(methods.emailPassword
-                ? { password: Utilities.getUuid() + Utilities.getUuid() }
-                : {}),
-            });
-        if (user.id !== administrator.id)
-          throw new Error("Registration must preserve the bootstrap user ID");
-        progress.registered = true;
-        this.write(state);
-      }
-      if (!progress.roleAssigned) {
-        if (this.options.overrides?.assignRole)
-          await this.options.overrides.assignRole(administrator);
-        else
-          await this.options.authorization.role.assign(
-            administrator.id,
-            administrator.role,
-          );
-        progress.roleAssigned = true;
-        this.write(state);
-      }
-      if (!progress.notified) {
-        if (this.options.overrides?.notify)
-          await this.options.overrides.notify(administrator);
-        else if (methods.emailPassword)
-          await this.options.auth.password!.forgot({ email });
-        progress.notified = true;
-        this.write(state);
-      }
-      if (!progress.hookCompleted) {
-        await this.options.afterInitialize?.(administrator);
-        progress.hookCompleted = true;
-        this.write(state);
-      }
-      this.write({ initialized: true });
-      return { initialized: true };
+      // Read current state at every checkpoint, preserving concurrent GET/token updates.
+      return run(state, state.progress);
+    });
+  }
+
+  private withScriptLock<T>(run: () => T): T {
+    const lock = LockService.getScriptLock();
+    lock.waitLock(30_000);
+    try {
+      return run();
     } finally {
       lock.releaseLock();
     }
@@ -202,6 +267,15 @@ export class AppsScriptBootstrap {
         state.bootstrap.attempts < 0)
     ) {
       throw new Error("Invalid bootstrap state");
+    }
+    if (
+      state.lease &&
+      (typeof state.lease.id !== "string" ||
+        !state.lease.id ||
+        !Number.isFinite(state.lease.expiresAt) ||
+        !state.progress)
+    ) {
+      throw new Error("Invalid bootstrap lease state");
     }
     if (
       state.progress &&

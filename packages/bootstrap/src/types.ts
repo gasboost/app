@@ -52,6 +52,8 @@ export type BootstrapOptions = {
 export type AppState = {
   initialized: boolean;
   bootstrap?: { token: string; expiresAt: number; attempts: number };
+  /** Exclusive execution reservation; mutated only while holding ScriptLock. */
+  lease?: { id: string; expiresAt: number };
   progress?: {
     administrator: BootstrapAdministrator;
     methods: { emailPassword: boolean; appsScript: boolean };

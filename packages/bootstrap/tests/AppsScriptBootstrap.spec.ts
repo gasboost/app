@@ -353,7 +353,7 @@ describe("provisioning and recovery", () => {
     f.auth.registration.methods.appsScript = true;
     await f.initialize();
   });
-  it("holds the script lock across asynchronous provisioning", async () => {
+  it("retains its lease while native ScriptLock is available to DB and GET", async () => {
     const f = fixture();
     f.get();
     let finish!: () => void;
@@ -364,12 +364,133 @@ describe("provisioning and recovery", () => {
         }) as never,
     );
     const first = f.initialize();
-    await expect(f.initialize()).rejects.toThrow("Script lock busy");
-    expect(() => f.get()).toThrow("Script lock busy");
+    const lease = f.state().lease;
+    expect(lease).toEqual({
+      id: expect.any(String),
+      expiresAt: Date.now() + 10 * 60_000,
+    });
+    // Model a dependency acquiring/releasing the same native lock between checkpoints.
+    f.lock.waitLock();
+    f.lock.releaseLock();
+    expect(f.get()).toEqual({
+      initialized: false,
+      settingsUrl: "https://script.google.com/home/projects/script-id/settings",
+    });
+    const otherRequest = new AppsScriptBootstrap(f.options);
+    await expect(
+      otherRequest
+        .handlers()
+        .initializeApp({ token: f.state().bootstrap!.token }),
+    ).rejects.toThrow("already in progress");
+    expect(f.state().lease).toEqual(lease);
     finish();
     await first;
     expect(f.auth.registration.ensure).toHaveBeenCalledOnce();
-    await expect(f.initialize("012345")).rejects.toThrow("already initialized");
+    expect(f.state()).toEqual({ initialized: true });
+  });
+  it("does not lose concurrent token changes at a checkpoint", async () => {
+    const f = fixture({ tokenTtlMinutes: 1 });
+    f.get();
+    let finish!: () => void;
+    f.db.migrate.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }) as never,
+    );
+    f.auth.registration.ensure.mockRejectedValueOnce(
+      new Error("stop after migration"),
+    );
+    const first = f.initialize();
+    const lease = f.state().lease;
+    vi.advanceTimersByTime(60_000);
+    f.utilities.computeDigest.mockReturnValue([9, 8, 7, 6, 5, 4]);
+    f.get();
+    const challenge = f.state().bootstrap;
+    expect(challenge?.token).toBe("987654");
+    expect(f.state().lease).toEqual(lease);
+    finish();
+    await expect(first).rejects.toThrow("stop after migration");
+    expect(f.state().bootstrap).toEqual(challenge);
+    expect(f.state().progress?.migrated).toBe(true);
+    expect(f.state().lease).toBeUndefined();
+  });
+  it("recovers a terminated execution only after its lease expires, preserving the user ID", async () => {
+    const f = fixture();
+    f.get();
+    const progress = {
+      administrator: {
+        id: "original-admin",
+        email: "admin@example.com",
+        name: "Admin",
+        role: "管理者",
+      },
+      methods: { emailPassword: true, appsScript: true },
+      migrated: true,
+    };
+    const lease = {
+      id: "terminated-execution",
+      expiresAt: Date.now() + 10 * 60_000,
+    };
+    f.setState({ ...f.state(), progress, lease });
+    await expect(f.initialize()).rejects.toThrow("already in progress");
+    vi.advanceTimersByTime(6 * 60_000);
+    await expect(f.initialize()).rejects.toThrow("already in progress");
+    vi.advanceTimersByTime(4 * 60_000);
+    await f.initialize();
+    expect(f.db.migrate).not.toHaveBeenCalled();
+    expect(f.auth.registration.ensure).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "original-admin" }),
+    );
+    expect(f.state()).toEqual({ initialized: true });
+  });
+  it("fences an expired owner and never clears its successor's lease", async () => {
+    const f = fixture();
+    f.get();
+    let firstFinish!: () => void;
+    let secondFinish!: () => void;
+    f.db.migrate
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            firstFinish = resolve;
+          }) as never,
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            secondFinish = resolve;
+          }) as never,
+      );
+    const first = f.initialize();
+    const oldLease = f.state().lease;
+    vi.advanceTimersByTime(10 * 60_000);
+    const second = f.initialize();
+    const successor = f.state().lease;
+    expect(successor?.id).not.toBe(oldLease?.id);
+    firstFinish();
+    await expect(first).rejects.toThrow("lease was lost or expired");
+    expect(f.state().lease).toEqual(successor);
+    expect(f.state().progress?.migrated).toBeUndefined();
+    expect(f.auth.registration.ensure).not.toHaveBeenCalled();
+    secondFinish();
+    await second;
+    expect(f.auth.registration.ensure).toHaveBeenCalledOnce();
+    expect(f.state()).toEqual({ initialized: true });
+  });
+  it("refuses to checkpoint after lease expiry even without a successor", async () => {
+    const f = fixture();
+    f.get();
+    f.db.migrate.mockImplementationOnce(() => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+    await expect(f.initialize()).rejects.toThrow("lease was lost or expired");
+    expect(f.state().initialized).toBe(false);
+    expect(f.state().progress?.migrated).toBeUndefined();
+    expect(f.state().lease).toBeUndefined();
+    expect(f.auth.registration.ensure).not.toHaveBeenCalled();
+    await f.initialize();
+    expect(f.state().initialized).toBe(true);
   });
   it("supports individual overrides and retries failed hooks without replaying standard steps", async () => {
     const notify = vi.fn(async () => {});
@@ -396,4 +517,11 @@ it.each([
   { maxAttempts: 0 },
 ])("rejects invalid settings %s", (settings) => {
   expect(() => fixture(settings)).toThrow();
+});
+
+it("fails closed on a corrupt execution lease", () => {
+  const f = fixture();
+  f.get();
+  f.setState({ ...f.state(), lease: { id: "", expiresAt: null } });
+  expect(() => f.get()).toThrow("Invalid bootstrap lease state");
 });

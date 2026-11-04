@@ -35,6 +35,7 @@ const { InMemoryCacheService } = requireCore("@gasboost/fake-core");
 class Gateway {
   records = new Map();
   current = "";
+  onWrite = () => {};
   table(sheetName, dbId) {
     this.current = `${dbId}:${sheetName}`;
   }
@@ -50,23 +51,29 @@ class Gateway {
     );
   }
   insert(records) {
+    this.onWrite();
     this.records.set(this.current, [
       ...this.read(),
       ...structuredClone(records),
     ]);
   }
   update(records, current) {
+    this.onWrite();
     records.forEach((record) => current.replace({ ...record }));
     this.records.set(this.current, structuredClone(current.getValues()));
   }
   delete(keys, current) {
+    this.onWrite();
     keys.forEach((key) => current.remove(key));
     this.records.set(this.current, structuredClone(current.getValues()));
   }
   rewrite(records) {
+    this.onWrite();
     this.records.set(this.current, structuredClone(records));
   }
-  setColumns() {}
+  setColumns() {
+    this.onWrite();
+  }
   protect() {}
   count() {
     return this.read().length;
@@ -91,6 +98,37 @@ for (const [emailPassword, appsScript] of [
     const roleTables = createAuthorizationTables();
     const utilities = new NodeUtilities();
     const cacheService = new InMemoryCacheService();
+    const scriptId = utilities.getUuid();
+    const lockService = new NodeLockService({ scriptId, userId: "admin" });
+    const competitorLocks = new NodeLockService({
+      scriptId,
+      userId: "other-request",
+    });
+    // Keep real shared handles; fail fast on a collision instead of waiting minutes in a regression.
+    const getScriptLock = lockService.getScriptLock.bind(lockService);
+    lockService.getScriptLock = () => {
+      const lock = getScriptLock();
+      const tryLock = lock.tryLock.bind(lock);
+      lock.tryLock = () => {
+        if (!tryLock(0))
+          throw new Error("Nested acquisition of the shared ScriptLock");
+        return true;
+      };
+      return lock;
+    };
+    function assertNativeLock(held) {
+      const probe = competitorLocks.getScriptLock();
+      const acquired = probe.tryLock(0);
+      if (acquired) probe.releaseLock();
+      assert.equal(
+        acquired,
+        !held,
+        held
+          ? "APP_STATE access must hold ScriptLock"
+          : "external work must release ScriptLock",
+      );
+    }
+    const gateway = new Gateway();
     const db = new SheetDB({
       tables: [
         authTables.user,
@@ -101,19 +139,20 @@ for (const [emailPassword, appsScript] of [
       ].map(
         (table) => new SheetTable({ ...table, dbId: "bootstrap-integration" }),
       ),
-      gateway: new Gateway(),
+      gateway,
       cacheService,
       utilities,
-      lockService: new NodeLockService({
-        scriptId: utilities.getUuid(),
-        userId: "admin",
-      }),
+      lockService,
     });
     let raw = null;
     const propertiesService = {
       getScriptProperties: () => ({
-        getProperty: () => raw,
+        getProperty: () => {
+          assertNativeLock(true);
+          return raw;
+        },
         setProperty: (_key, value) => {
+          assertNativeLock(true);
           raw = value;
         },
       }),
@@ -121,23 +160,12 @@ for (const [emailPassword, appsScript] of [
     const session = {
       getActiveUser: () => ({ getEmail: () => "admin@example.com" }),
     };
-    let locked = false;
     Object.assign(globalThis, {
       Utilities: utilities,
       PropertiesService: propertiesService,
       Session: session,
       ScriptApp: { getScriptId: () => "integration" },
-      LockService: {
-        getScriptLock: () => ({
-          waitLock() {
-            assert.equal(locked, false);
-            locked = true;
-          },
-          releaseLock() {
-            locked = false;
-          },
-        }),
-      },
+      LockService: lockService,
     });
     const repository = new SheetOrmAuthRepository({
       db,
@@ -155,6 +183,7 @@ for (const [emailPassword, appsScript] of [
         passwordReset: {
           delivery: {
             async send(message) {
+              await assertExclusive("notify");
               messages.push(message);
               if (messages.length === 1)
                 throw new Error("notification interrupted");
@@ -173,7 +202,49 @@ for (const [emailPassword, appsScript] of [
         schema: roleTables.schema,
       }),
     });
-    const bootstrap = new AppsScriptBootstrap({ db, auth, authorization });
+    const observedStages = [];
+    const options = {
+      db,
+      auth,
+      authorization,
+      afterInitialize: () => assertExclusive("hook"),
+    };
+    const competingRequest = new AppsScriptBootstrap(options);
+    async function assertExclusive(stage) {
+      assertNativeLock(false);
+      const lease = JSON.parse(raw).lease;
+      assert.ok(lease?.id);
+      assert.ok(lease.expiresAt > Date.now());
+      await assert.rejects(
+        competingRequest
+          .handlers()
+          .initializeApp({ token: JSON.parse(raw).bootstrap.token }),
+        /already in progress/,
+      );
+      assert.deepEqual(JSON.parse(raw).lease, lease);
+      observedStages.push(stage);
+    }
+    // Probe from inside real SheetORM writes, after its short internal lock was released.
+    const probes = [];
+    gateway.onWrite = () => {
+      probes.push(assertExclusive("DB write"));
+    };
+    const migrate = db.migrate.bind(db);
+    db.migrate = async () => {
+      await assertExclusive("migrate");
+      migrate();
+    };
+    const ensure = auth.registration.ensure.bind(auth.registration);
+    auth.registration.ensure = async (input) => {
+      await assertExclusive("ensure");
+      return ensure(input);
+    };
+    const assign = authorization.role.assign.bind(authorization.role);
+    authorization.role.assign = async (...args) => {
+      await assertExclusive("assign");
+      return assign(...args);
+    };
+    const bootstrap = new AppsScriptBootstrap(options);
     let state;
     bootstrap.middleware()(
       {
@@ -200,6 +271,14 @@ for (const [emailPassword, appsScript] of [
     }
     await bootstrap.handlers().initializeApp(input);
     assert.deepEqual(JSON.parse(raw), { initialized: true });
+    await Promise.all(probes);
+    assert.ok(probes.length > 0);
+    assert.ok(observedStages.includes("migrate"));
+    assert.ok(observedStages.includes("ensure"));
+    assert.ok(observedStages.includes("assign"));
+    assert.ok(observedStages.includes("hook"));
+    if (emailPassword) assert.ok(observedStages.includes("notify"));
+    gateway.onWrite = () => {};
     const users = db.table("user").find();
     assert.equal(users.length, 1);
     assert.equal(
