@@ -1,4 +1,4 @@
-import type { AppsScriptMiddleware } from "@gasboost/app";
+import type { AppsScriptHttpRequest } from "@gasboost/app";
 import type { AppState, BootstrapOptions, BootstrapPublicState } from "./types";
 
 type BootstrapStep =
@@ -7,18 +7,12 @@ type BootstrapStep =
 export class AppsScriptBootstrap {
   // Exceeds the GAS Web App runtime limit (6 min); do not renew from a running request.
   private static readonly LEASE_MS = 10 * 60_000;
-  public readonly KEY = "bootstrap" as const;
-  private readonly digits: number;
   private readonly ttl: number;
   private readonly maxAttempts: number;
 
   constructor(private readonly options: BootstrapOptions) {
-    this.digits = options.tokenDigits ?? 6;
     this.ttl = (options.tokenTtlMinutes ?? 30) * 60_000;
     this.maxAttempts = options.maxAttempts ?? 5;
-    if (!Number.isInteger(this.digits) || this.digits < 6 || this.digits > 32) {
-      throw new Error("tokenDigits must be an integer between 6 and 32");
-    }
     if (
       !Number.isFinite(this.ttl) ||
       this.ttl < 60_000 ||
@@ -35,36 +29,100 @@ export class AppsScriptBootstrap {
     }
   }
 
-  public middleware(): AppsScriptMiddleware<
-    {},
-    { bootstrap: BootstrapPublicState }
-  > {
-    return (context, next) => {
-      const lock = LockService.getScriptLock();
-      lock.waitLock(30_000);
-      try {
-        const state = this.read();
-        if (!state.initialized) {
-          if (!state.bootstrap || state.bootstrap.expiresAt <= Date.now()) {
-            state.bootstrap = {
-              token: this.token(),
-              expiresAt: Date.now() + this.ttl,
-              attempts: 0,
-            };
-            this.write(state);
-          }
-          context.state.set(this.KEY, {
-            initialized: false,
-            settingsUrl: `https://script.google.com/home/projects/${encodeURIComponent(ScriptApp.getScriptId())}/settings`,
-          });
-        } else {
-          context.state.set(this.KEY, { initialized: true });
-        }
-      } finally {
-        lock.releaseLock();
+  /** Synchronous state/notification only. Database initialization is an authenticated RPC. */
+  public handle(request: AppsScriptHttpRequest): BootstrapPublicState {
+    const result = this.withScriptLock<{
+      state: BootstrapPublicState;
+      notice?: { leaseId: string; email: string; url: string };
+    }>(() => {
+      const state = this.read();
+      if (state.initialized) return { state: { initialized: true } };
+      const email = this.effectiveEmail();
+      if (
+        (state.bootstrap?.email && state.bootstrap.email !== email) ||
+        (state.progress && state.progress.administrator.email !== email)
+      ) {
+        throw new Error("Bootstrap requires the original effective user");
       }
-      return next();
-    };
+      const token = request.query("token");
+      if (Object.hasOwn(request.query(), "token")) {
+        this.verify(state, token, email);
+        return { state: { initialized: false } };
+      }
+      if (state.lease && state.lease.expiresAt > Date.now())
+        return { state: { initialized: false } };
+      if (
+        state.bootstrap?.email &&
+        state.bootstrap.expiresAt > Date.now() &&
+        state.bootstrap.notified
+      ) {
+        return { state: { initialized: false } };
+      }
+      if (
+        state.bootstrap?.email &&
+        state.bootstrap.expiresAt > Date.now() &&
+        (state.bootstrap.retryAt ?? 0) > Date.now()
+      )
+        return { state: { initialized: false } };
+      // No property writes or mail if the deployment URL is invalid.
+      const baseUrl = ScriptApp.getService().getUrl();
+      if (
+        !baseUrl ||
+        !/^https:\/\/script\.google\.com\/(?:a\/macros\/[^/]+\/s|macros\/s)\/[A-Za-z0-9_-]+\/exec$/.test(
+          baseUrl,
+        )
+      ) {
+        throw new Error(
+          "Bootstrap requires a deployed /exec URL; /dev is not supported",
+        );
+      }
+      if (!state.bootstrap?.email || state.bootstrap.expiresAt <= Date.now()) {
+        state.bootstrap = {
+          token: this.token(),
+          expiresAt: Date.now() + this.ttl,
+          attempts: 0,
+          email,
+          notified: false,
+        };
+      }
+      if (state.bootstrap.attempts >= this.maxAttempts)
+        throw new Error("Bootstrap is locked until token expiry");
+      // Persist retry spacing before the external send, including ambiguous send/checkpoint failures.
+      state.bootstrap.retryAt = Date.now() + 60_000;
+      const leaseId = Utilities.getUuid();
+      state.lease = {
+        id: leaseId,
+        expiresAt: Date.now() + AppsScriptBootstrap.LEASE_MS,
+        kind: "notification",
+      };
+      this.write(state);
+      return {
+        state: { initialized: false },
+        notice: {
+          leaseId,
+          email,
+          url: `${baseUrl}?token=${encodeURIComponent(state.bootstrap.token)}`,
+        },
+      };
+    });
+    if (result.notice) {
+      const { leaseId, email, url } = result.notice;
+      try {
+        MailApp.sendEmail({
+          to: email,
+          subject: "アプリの初期設定",
+          body: `次のリンクからアプリの初期設定を行ってください。\n${url}\nこのリンクを第三者へ共有しないでください。`,
+        });
+        this.withReservation(leaseId, (state) => {
+          state.bootstrap!.notified = true;
+          delete state.bootstrap!.retryAt;
+          this.write(state);
+        });
+      } finally {
+        this.release(leaseId);
+      }
+    }
+    return result.state;
   }
 
   public handlers() {
@@ -86,7 +144,7 @@ export class AppsScriptBootstrap {
       await this.step(leaseId, "registered", async () => {
         const user = this.options.overrides?.registerAdministrator
           ? await this.options.overrides.registerAdministrator(administrator)
-          : await this.options.auth.registration.ensure({
+          : await this.options.auth.registration.ensureEffectiveUser({
               ...administrator,
               ...(methods.emailPassword
                 ? { password: Utilities.getUuid() + Utilities.getUuid() }
@@ -118,13 +176,7 @@ export class AppsScriptBootstrap {
       this.withLease(leaseId, () => this.write({ initialized: true }));
       return { initialized: true };
     } finally {
-      this.withScriptLock(() => {
-        const state = this.read();
-        // A stale execution must never release a successor's lease.
-        if (state.lease?.id !== leaseId) return;
-        delete state.lease;
-        this.write(state);
-      });
+      this.release(leaseId);
     }
   }
 
@@ -138,26 +190,8 @@ export class AppsScriptBootstrap {
           "Bootstrap initialization is already in progress; retry later",
         );
       }
-      const challenge = state.bootstrap;
-      if (!challenge)
-        throw new Error("Open the application to issue a bootstrap token");
-      if (challenge.expiresAt <= Date.now())
-        throw new Error("Bootstrap token has expired; reload the application");
-      if (challenge.attempts >= this.maxAttempts)
-        throw new Error("Bootstrap is locked until token expiry");
-      if (
-        typeof input?.token !== "string" ||
-        !this.equal(input.token, challenge.token)
-      ) {
-        challenge.attempts += 1;
-        this.write(state);
-        throw new Error("Invalid bootstrap token");
-      }
-      const email = Session.getActiveUser().getEmail().trim();
-      if (!email)
-        throw new Error(
-          "Active user email is unavailable; check the GAS deployment settings",
-        );
+      const email = this.effectiveEmail();
+      this.verify(state, input?.token, email);
       const methods = this.options.auth.registration.methods;
       if (!methods.emailPassword && !methods.appsScript)
         throw new Error("No authentication method is enabled");
@@ -183,7 +217,9 @@ export class AppsScriptBootstrap {
       }
       const progress = state.progress;
       if (progress.administrator.email !== email)
-        throw new Error("Bootstrap recovery requires the original active user");
+        throw new Error(
+          "Bootstrap recovery requires the original effective user",
+        );
       if (
         progress.methods.emailPassword !== methods.emailPassword ||
         progress.methods.appsScript !== methods.appsScript
@@ -196,6 +232,7 @@ export class AppsScriptBootstrap {
       state.lease = {
         id: leaseId,
         expiresAt: Date.now() + AppsScriptBootstrap.LEASE_MS,
+        kind: "initialization",
       };
       // Commit the fixed administrator ID and lease before any external work.
       this.write(state);
@@ -225,19 +262,60 @@ export class AppsScriptBootstrap {
     leaseId: string,
     run: (state: AppState, progress: NonNullable<AppState["progress"]>) => T,
   ): T {
+    return this.withReservation(leaseId, (state) => {
+      if (!state.progress) throw new Error("Invalid bootstrap recovery state");
+      return run(state, state.progress);
+    });
+  }
+
+  private withReservation<T>(leaseId: string, run: (state: AppState) => T): T {
     return this.withScriptLock(() => {
       const state = this.read();
       if (
         state.initialized ||
         state.lease?.id !== leaseId ||
-        state.lease.expiresAt <= Date.now() ||
-        !state.progress
+        state.lease.expiresAt <= Date.now()
       ) {
         throw new Error("Bootstrap execution lease was lost or expired");
       }
-      // Read current state at every checkpoint, preserving concurrent GET/token updates.
-      return run(state, state.progress);
+      return run(state);
     });
+  }
+
+  private release(leaseId: string): void {
+    this.withScriptLock(() => {
+      const state = this.read();
+      if (state.lease?.id !== leaseId) return;
+      delete state.lease;
+      this.write(state);
+    });
+  }
+
+  private effectiveEmail(): string {
+    const email = Session.getEffectiveUser().getEmail().trim();
+    if (!email) throw new Error("Effective user email is unavailable");
+    return email;
+  }
+
+  private verify(state: AppState, token: unknown, email: string): void {
+    const challenge = state.bootstrap;
+    if (!challenge?.email)
+      throw new Error("Open the application to issue a bootstrap link");
+    if (challenge.expiresAt <= Date.now())
+      throw new Error("Bootstrap token has expired; reload the application");
+    if (challenge.attempts >= this.maxAttempts)
+      throw new Error("Bootstrap is locked until token expiry");
+    if (typeof token !== "string" || !this.equal(token, challenge.token)) {
+      challenge.attempts += 1;
+      this.write(state);
+      throw new Error("Invalid bootstrap token");
+    }
+    if (challenge.email !== email)
+      throw new Error("Bootstrap requires the original effective user");
+    if (!challenge.notified)
+      throw new Error(
+        "Bootstrap link delivery is incomplete; open /exec without token to retry",
+      );
   }
 
   private withScriptLock<T>(run: () => T): T {
@@ -261,7 +339,8 @@ export class AppsScriptBootstrap {
     if (
       state.bootstrap &&
       (typeof state.bootstrap.token !== "string" ||
-        !/^\d{6,32}$/.test(state.bootstrap.token) ||
+        state.bootstrap.token.length > 256 ||
+        !state.bootstrap.token.length ||
         !Number.isFinite(state.bootstrap.expiresAt) ||
         !Number.isInteger(state.bootstrap.attempts) ||
         state.bootstrap.attempts < 0)
@@ -269,11 +348,24 @@ export class AppsScriptBootstrap {
       throw new Error("Invalid bootstrap state");
     }
     if (
+      state.bootstrap?.email !== undefined &&
+      (typeof state.bootstrap.email !== "string" ||
+        !state.bootstrap.email ||
+        typeof state.bootstrap.notified !== "boolean" ||
+        (state.bootstrap.retryAt !== undefined &&
+          !Number.isFinite(state.bootstrap.retryAt)))
+    ) {
+      throw new Error("Invalid bootstrap notification state");
+    }
+    if (
       state.lease &&
       (typeof state.lease.id !== "string" ||
         !state.lease.id ||
         !Number.isFinite(state.lease.expiresAt) ||
-        !state.progress)
+        (!state.progress && state.lease.kind !== "notification") ||
+        (state.lease.kind !== undefined &&
+          state.lease.kind !== "notification" &&
+          state.lease.kind !== "initialization"))
     ) {
       throw new Error("Invalid bootstrap lease state");
     }
@@ -299,21 +391,7 @@ export class AppsScriptBootstrap {
   }
 
   private token(): string {
-    // UUID entropy from GAS, SHA-256, rejection sampling (no modulo bias).
-    let result = "";
-    while (result.length < this.digits) {
-      const bytes = Utilities.computeDigest(
-        Utilities.DigestAlgorithm.SHA_256,
-        Utilities.getUuid() + Utilities.getUuid(),
-        Utilities.Charset.UTF_8,
-      );
-      for (const signed of bytes) {
-        const byte = signed & 255;
-        if (byte < 250) result += String(byte % 10);
-        if (result.length === this.digits) break;
-      }
-    }
-    return result;
+    return Utilities.getUuid() + Utilities.getUuid();
   }
 
   private equal(left: string, right: string): boolean {

@@ -23,6 +23,7 @@ try {
       dependencies: {
         "@gasboost/app": `file:${join(root, app)}`,
         "@gasboost/bootstrap": `file:${join(root, bootstrap)}`,
+        "@gasboost/client": "^0.5.0",
       },
       devDependencies: {
         typescript: "^7.0.2",
@@ -36,23 +37,28 @@ try {
     `
 import { AppsScript, type InferAppsScript } from "@gasboost/app";
 import { AppsScriptBootstrap, type BootstrapPublicState } from "@gasboost/bootstrap";
+import { appsScriptClient } from "@gasboost/client";
 
 const bootstrap = new AppsScriptBootstrap({
   db: { migrate() {} },
   auth: { registration: {
     methods: { emailPassword: false, appsScript: true },
-    async ensure(input) { return { id: input.id }; },
+    async ensureEffectiveUser(input) { return { id: input.id }; },
   } },
   authorization: { role: { async assign(_id: string, _role: "管理者") {} } },
 });
-const app = new AppsScript().get((_request, context) => {
-  const state: BootstrapPublicState = context.state.get(bootstrap.KEY);
+const app = new AppsScript().get(request => {
+  const state: BootstrapPublicState = bootstrap.handle(request);
   void state;
   return {} as GoogleAppsScript.HTML.HtmlOutput;
-}, [bootstrap.middleware()]).calls(bootstrap.handlers());
+}).calls(bootstrap.handlers());
 type API = InferAppsScript<typeof app>;
 const input: API["initializeApp"]["input"] = { token: "000001" };
-void input;
+if (false) {
+  const { client } = appsScriptClient<API>();
+  const result: Promise<BootstrapPublicState> = client.initializeApp(input);
+  void result;
+}
 if (typeof AppsScriptBootstrap !== "function") throw new Error("Bootstrap export is not loadable");
 `,
   );

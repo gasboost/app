@@ -51,8 +51,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: gasboost/auth
-          # auth#49: pin the API used by the integration test, including recovery fixes.
-          ref: 9b15a42587fe15c5f7c3fc97112df3ffd88272b4
+          # Pin the EffectiveUser provisioning API used by the integration test.
+          ref: a8f2a0ff3f3a75ba1cffcf5baa76759052dd84d9
           path: .bootstrap-auth
           persist-credentials: false
 
@@ -62,6 +62,9 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm --filter @gasboost/auth build
           pnpm --filter @gasboost/auth-sheetorm build
+
+      - name: Build client
+        run: pnpm --filter @gasboost/client build
 
       - name: Integration test bootstrap with Auth and SheetORM
         env:
@@ -76,9 +79,6 @@ jobs:
 
       - name: Test client
         run: pnpm --filter @gasboost/client test
-
-      - name: Build client
-        run: pnpm --filter @gasboost/client build
 
       - name: Typecheck bridge
         run: pnpm --filter @gasboost/bridge typecheck

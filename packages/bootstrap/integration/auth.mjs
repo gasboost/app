@@ -5,6 +5,8 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { test } from "node:test";
 import { AppsScriptBootstrap } from "../dist/index.js";
+import { AppsScript, AppsScriptHttpRequest } from "@gasboost/app";
+import { appsScriptClient } from "@gasboost/client";
 
 const workspace = process.env.GASBOOST_AUTH_WORKSPACE;
 if (!workspace)
@@ -158,13 +160,25 @@ for (const [emailPassword, appsScript] of [
       }),
     };
     const session = {
-      getActiveUser: () => ({ getEmail: () => "admin@example.com" }),
+      getActiveUser: () => ({ getEmail: () => "" }),
+      getEffectiveUser: () => ({ getEmail: () => "admin@example.com" }),
     };
+    const setupMessages = [];
     Object.assign(globalThis, {
       Utilities: utilities,
       PropertiesService: propertiesService,
       Session: session,
-      ScriptApp: { getScriptId: () => "integration" },
+      ScriptApp: {
+        getService: () => ({
+          getUrl: () => "https://script.google.com/macros/s/integration/exec",
+        }),
+      },
+      MailApp: {
+        sendEmail: (message) => {
+          assertNativeLock(false);
+          setupMessages.push(message);
+        },
+      },
       LockService: lockService,
     });
     const repository = new SheetOrmAuthRepository({
@@ -234,8 +248,10 @@ for (const [emailPassword, appsScript] of [
       await assertExclusive("migrate");
       migrate();
     };
-    const ensure = auth.registration.ensure.bind(auth.registration);
-    auth.registration.ensure = async (input) => {
+    const ensure = auth.registration.ensureEffectiveUser.bind(
+      auth.registration,
+    );
+    auth.registration.ensureEffectiveUser = async (input) => {
       await assertExclusive("ensure");
       return ensure(input);
     };
@@ -245,31 +261,48 @@ for (const [emailPassword, appsScript] of [
       return assign(...args);
     };
     const bootstrap = new AppsScriptBootstrap(options);
-    let state;
-    bootstrap.middleware()(
-      {
-        state: {
-          set: (_key, value) => {
-            state = value;
-          },
-        },
-      },
-      () => {},
-    );
-    assert.deepEqual(state, {
-      initialized: false,
-      settingsUrl:
-        "https://script.google.com/home/projects/integration/settings",
+    const app = new AppsScript()
+      .get((request) => {
+        const state = bootstrap.handle(request);
+        assert.deepEqual(state, { initialized: false });
+        return {};
+      })
+      .calls(bootstrap.handlers());
+    const request = new AppsScriptHttpRequest({
+      parameter: {},
+      parameters: {},
     });
-    const input = { token: JSON.parse(raw).bootstrap.token };
+    assert.deepEqual(bootstrap.handle(request), { initialized: false });
+    assert.equal(setupMessages.length, 1);
+    const input = {
+      token: new URL(setupMessages[0].body.split("\n")[1]).searchParams.get(
+        "token",
+      ),
+    };
+    assert.equal(input.token, JSON.parse(raw).bootstrap.token);
+    assert.deepEqual(
+      bootstrap.handle(
+        new AppsScriptHttpRequest({
+          parameter: { token: input.token },
+          parameters: {},
+        }),
+      ),
+      { initialized: false },
+    );
+    assert.equal(setupMessages.length, 1);
+    const { client } = appsScriptClient({
+      transport: {
+        call: (name, input, metadata) => app.dispatch(name, input, metadata),
+      },
+    });
     if (emailPassword) {
       await assert.rejects(
-        bootstrap.handlers().initializeApp(input),
+        client.initializeApp(input),
         /notification interrupted/,
       );
       assert.equal(JSON.parse(raw).initialized, false);
     }
-    await bootstrap.handlers().initializeApp(input);
+    await client.initializeApp(input);
     assert.deepEqual(JSON.parse(raw), { initialized: true });
     await Promise.all(probes);
     assert.ok(probes.length > 0);
@@ -319,6 +352,7 @@ for (const [emailPassword, appsScript] of [
       "Session",
       "ScriptApp",
       "LockService",
+      "MailApp",
     ])
       delete globalThis[name];
   });

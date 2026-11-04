@@ -1,17 +1,16 @@
 /** Safe to embed in HTML. Secrets and recovery data never appear here. */
 export type BootstrapPublicState = {
   initialized: boolean;
-  settingsUrl?: string;
 };
 
-/** Structural subset of @gasboost/auth >=0.8.0; no runtime Auth import. */
+/** Structural subset of @gasboost/auth >=0.9.0; no runtime Auth import. */
 export interface BootstrapAuth {
   registration: {
     readonly methods: {
       readonly emailPassword: boolean;
       readonly appsScript: boolean;
     };
-    ensure(input: {
+    ensureEffectiveUser(input: {
       id: string;
       name: string;
       email: string;
@@ -35,7 +34,6 @@ export type BootstrapOptions = {
     role: { assign(userId: string, role: string): Promise<void> };
   };
   administrator?: { name?: string; role?: string };
-  tokenDigits?: number;
   tokenTtlMinutes?: number;
   maxAttempts?: number;
   /** Replacements must be idempotent: a process may stop after an external write. */
@@ -51,9 +49,20 @@ export type BootstrapOptions = {
 
 export type AppState = {
   initialized: boolean;
-  bootstrap?: { token: string; expiresAt: number; attempts: number };
+  bootstrap?: {
+    token: string;
+    expiresAt: number;
+    attempts: number;
+    email?: string;
+    notified?: boolean;
+    retryAt?: number;
+  };
   /** Exclusive execution reservation; mutated only while holding ScriptLock. */
-  lease?: { id: string; expiresAt: number };
+  lease?: {
+    id: string;
+    expiresAt: number;
+    kind?: "notification" | "initialization";
+  };
   progress?: {
     administrator: BootstrapAdministrator;
     methods: { emailPassword: boolean; appsScript: boolean };

@@ -1,35 +1,27 @@
 # @gasboost/bootstrap
 
-GETベースの `handle(request)` への変更は [Issue #66](https://github.com/gasboost/app/issues/66) で検討中です。
-現行の非同期Auth APIは同期GETへ直接接続できないことを実機で確認しています。
-[Issue #66 の検証結果](https://github.com/gasboost/app/issues/66)を参照してください。
-以下は引き続き0.1.0のAPIです。
+GAS Webアプリの初期設定を、**同期GET（公開状態と初期化リンク通知）** と
+**非同期RPC（トークン検証後のDB migration・管理者登録・ロール付与）** に分けます。
+HTML・テンプレート変数・タイトル・UIはConsumerが生成します。BootstrapはHtmlServiceに依存しません。
 
-GAS Web アプリの初回起動時に、DB migration → 管理者 User / Account 登録 →
-管理者ロール付与 → 初期パスワード設定通知を行います。UI は Consumer 側で実装します。
-
-## インストールと依存リリース
+## インストール
 
 ```sh
-pnpm add @gasboost/bootstrap @gasboost/auth@^0.8.0 @gasboost/auth-sheetorm@^0.4.0 @gasboost/auth-app@^0.6.1
+pnpm add @gasboost/app@^5.4.0 @gasboost/bootstrap@^0.2.0 @gasboost/client@^0.5.0
+pnpm add @gasboost/auth@^0.9.0 @gasboost/auth-sheetorm@^0.4.1 @gasboost/auth-app@^0.6.2
 ```
 
-標準登録は [gasboost/auth#49](https://github.com/gasboost/auth/pull/49) の
-`registration.methods` / `registration.ensure()` と `user.save()` を必要とします。
-Auth 0.8.0 / auth-sheetorm 0.4.0 のリリース後に利用してください。
-App は GET local middleware に対応する 5.3.0 以上が必要です。App のAPI変更はありません。
-初版は 0.1.0 です。
+標準登録は [gasboost/auth#50](https://github.com/gasboost/auth/pull/50) の
+`registration.ensureEffectiveUser()` を必要とします。依存リリース後に利用してください。
+Auth / DB / Password Resetの非同期APIは変更せず使用します。
+Bootstrapは注入された公開APIの構造型に依存し、AuthやClientをruntime importしません。
+Clientは既存APIを使用するため、この変更によるversion bumpはありません。
 
-Auth / DB は Consumer で構築したインスタンスを渡します。パッケージはそれぞれの
-公開メソッドの構造型だけに依存し、Auth を実行時にロードしません。
-DB は `SheetDB.migrate()`、Auth は `AppsScriptAuth`、Authorization は
-`AppsScriptAuthorization` をそのまま利用できます。SheetORM の独自 Repository は
-再実行可能な `user.save()` と、同じ User / Role を重複登録しない `role.assign()` を実装してください。
+## Backend
 
-## 最小 Consumer
-
-`db`・`auth`・`authorization` は、Auth / Authorization テーブルを含めた設定済みインスタンスです。
-Email/Password を有効にする場合は `emailPassword.passwordReset.delivery` を設定してください。
+`db`・`auth`・`authorization` は設定済みの `SheetDB`・`AppsScriptAuth`・
+`AppsScriptAuthorization` です。DBにはAuth / Authorizationのテーブルを含めます。
+Email/Password有効時は `emailPassword.passwordReset.delivery` を設定してください。
 
 ```ts
 import { AppsScript, type InferAppsScript } from "@gasboost/app";
@@ -40,29 +32,23 @@ const bootstrap = new AppsScriptBootstrap({
   db,
   auth,
   authorization,
-  tokenDigits: 6,
   tokenTtlMinutes: 30,
   maxAttempts: 5,
   administrator: { name: "システム管理者", role: "管理者" },
 });
 
 const app = new AppsScript()
-  .get(
-    (_request, context) => {
-      const template = HtmlService.createTemplateFromFile("index");
-      // force-print する JSON 内で </script> と Unicode line separator を無害化。
-      template.value = JSON.stringify({
-        bootstrap: context.state.get(bootstrap.KEY),
-      })
-        .replace(/</g, "\\u003c")
-        .replace(/\u2028/g, "\\u2028")
-        .replace(/\u2029/g, "\\u2029");
-      return template.evaluate();
-    },
-    [bootstrap.middleware()],
-  )
-  .calls(bootstrap.handlers()) // 通常認証を掛けずに登録
-  .calls(handlers(auth)) // sign-in / password reset もログイン前に利用可能
+  .get((request) => {
+    const state = bootstrap.handle(request); // Promiseではなく公開状態を返す
+    const template = HtmlService.createTemplateFromFile("index");
+    template.value = JSON.stringify(state)
+      .replace(/</g, "\\u003c")
+      .replace(/\u2028/g, "\\u2028")
+      .replace(/\u2029/g, "\\u2029");
+    return template.evaluate().setTitle("出張管理システム");
+  })
+  .calls(bootstrap.handlers()) // 通常のログイン認証より前に登録
+  .calls(handlers(auth)) // sign-in / password resetもログイン前に利用可能
   .use(authentication(auth))
   .call("privateExample", () => ({ ok: true }));
 
@@ -70,7 +56,8 @@ export default app;
 export type AppType = InferAppsScript<typeof app>;
 ```
 
-HTML テンプレートに次を配置します。JSON は上記のエスケープ後の値だけを force-print します。
+HTMLテンプレートでは、上記でエスケープしたJSONだけをforce-printします。
+`value` という変数名や以下の配置はConsumerの選択です。
 
 ```html
 <script id="app-value" type="application/json">
@@ -78,123 +65,137 @@ HTML テンプレートに次を配置します。JSON は上記のエスケー�
 </script>
 ```
 
-React 起動時に `JSON.parse(document.getElementById("app-value")!.textContent!)`
-から公開状態を取得し、`bootstrap.initialized` が false なら初期設定画面、true なら通常画面を描画します。
-公開型は `BootstrapPublicState` です。追加の初期状態取得 RPC は不要です。
-未完了時には `settingsUrl` のリンクとトークン入力欄を表示してください。
-初期設定画面で型付きクライアントの `client.initializeApp({ token })` を呼び、成功したら
-戻り値 `{ initialized: true }` に従って切り替えます。パッケージは画面の表示や通常RPCのアクセス制御を行いません。
+公開状態は `BootstrapPublicState = { initialized: boolean }` だけです。
+トークン・メール・リース・試行回数・復旧情報はHTMLへ渡しません。
+`settingsUrl` は廃止しました。画面のmeta・favicon・title等はすべてConsumerが設定します。
 
-## 初期設定画面と本人の識別
+## Frontendとメールリンク
 
-1. アプリへアクセスすると Script Properties の `APP_STATE` に JSON が作られます。
-2. `settingsUrl` から GAS プロジェクト設定を開き、スクリプトプロパティの
-   `APP_STATE` 内にある `bootstrap.token` を確認します。編集権限が必要です。
-3. 先頭のゼロを含む文字列を入力して初期化します。トークンや `APP_STATE` 全体を共有しないでください。
-4. 有効な認証方式ごとに同じ管理者 User に Account を登録し、ロールを付与します。
-   Email/Password 有効時は設定済み delivery でパスワードリセット用トークンを送信します。
-   仮パスワードは推測困難なUUIDから生成し、返却・保存・メール送信しません。
+未初期化で通常の `/exec` を開くと、EffectiveUser宛てに
+`https://script.google.com/macros/s/<deployment>/exec?token=<長いトークン>` を送ります。
+同じ通知済みトークンの期限内GETでは再送しません。
+メールを受け取ったデプロイ実行者がリンクを開き、Consumerが次のRPCを実行します。
+トークンを返却状態に埋め込んだり、フロントから送信先メールを指定したりしません。
 
-初期管理者のメールアドレスは常に `Session.getActiveUser().getEmail()` です。
-空なら明示的にエラーにし、`getEffectiveUser()` へは切り替えません。
-トークン所持はスクリプトプロパティを読めたことの証明であり、Google アカウント本人確認とは別です。
-編集者権限をGoogle APIで再検証する仕組みではありません。トークンを漏らした相手も入力できるため厳重に扱ってください。
-
-GAS Web アプリの「次のユーザーとして実行」はアクセスしているユーザーを基本とし、
-対象の管理者がログイン・承認した状態で初期化してください。自分として実行するデプロイや
-組織のポリシーによって active user のメールが空になる場合があります。
-OAuth スコープには利用する DB・通知処理に必要な権限と `userinfo.email` を設定します。
-初期化中はアクセス対象を編集者・組織内に制限し、通知先のメールアドレスを確認してください。
-
-## ロック・期限・復旧
-
-`APP_STATE` の読取・トークン照合・リース取得・進捗保存・完了更新は短い Script Lock の中で行います。
-DB・Auth・通知・hook の呼び出し中にはネイティブロックを保持しません。
-SheetORM v4 が同じ LockService / ScriptLock を内部利用しても、入れ子の取得・解放は発生しません。
-この方式は GAS ScriptLock の再入取得や参照カウントの保証に依存しません。
-ネイティブロックの待機上限は30秒です。
-
-初期化全体の排他は `APP_STATE.lease = { id, expiresAt }` で行います。
-検証済みの1リクエストだけが10分のリースを取り、有効な間は別リクエストの初期化を即座に拒否します。
-GET や SheetORM 内部のネイティブロック解放では、このリースを更新・解除しません。
-リースと管理者IDは同じプロパティ書き込みでDB処理前に保存します。
-各処理の前後と完了時に、現在の所有者ID・期限をロック内で再確認します。
-古い所有者は進捗・完了を書き込めず、後続実行のリースを解除することもできません。
-進捗保存では毎回最新状態を読み、並行GETによるトークン更新も保持します。
-
-通常の成功・例外では自分のリースを解放するため、失敗後すぐ再試行できます。
-強制終了やProperties障害でリースだけが残った場合は、元の取得時刻から10分経過後に再試行します。
-リースは実行中も延長しません。GAS Webアプリは
-[Google公式の実行上限（1実行6分）](https://developers.google.com/apps-script/guides/services/quotas#current_limitations)
-を前提とし、その上限より長いリースが生存中の別実行への引き継ぎを防ぎます。
-6分を超えて実行を継続する別ランタイムは対象外です。Googleが実行上限を変更した場合も、
-10分未満という前提を再確認してから利用してください。
-
-トークンは GAS UUID と SHA-256・偏りのないサンプリングで生成します。
-既定値は6桁・30分・失敗5回です。`tokenDigits` は6〜32、`tokenTtlMinutes` は1〜1440、
-`maxAttempts` は1〜100を指定できます。数字トークンは string のまま送信します。
-失敗上限到達後は、正しいトークンでも期限まで拒否します。GET の連打では試行回数を戻しません。
-期限後の GET だけが新しいトークンと試行枠を発行します。RPC が勝手に再発行することはありません。
-
-初回の有効なトークン照合後、管理者ID・本人メール・認証方式を **DB書き込みより先に** 保存します。
-各段階の進捗を保存し、失敗時は initialized=false のまま元の本人で再試行できます。
-トークンを更新しても復旧情報を保持します。認証方式が変わった場合は元の設定に戻して再試行します。
-完了時は `{ "initialized": true }` だけを保存してトークン・リース・復旧情報を消去し、再実行を拒否します。
-
-Spreadsheet と PropertiesService は原子的トランザクションではありません。
-外部書き込み後・進捗保存前に停止した段階は再実行されるため、登録は固定IDで修復、ロールは upsert、
-migration と hook は再実行可能にします。通知送信後に停止すると重複メールが届くことがあります。
-通知失敗時は同じ `initializeApp` を再実行すると `password.forgot()` が新トークンを再発行します。
-仮パスワードや古いリセットトークンを再送しません。通知完了済みの段階は通常の再開では省略します。
-完了後のリセット再発行には通常のAuth password-resetフローを利用します。
-
-`APP_STATE` が壊れている場合は勝手に初期化し直さずエラーにします。
-既存DBを残して `APP_STATE` を削除すると別の初期化になります。復旧時はプロパティを保持してください。
-
-## 必要な段階だけを差し替える
+GASのHTMLはiframe内で動くため、親の `/exec` のパラメータには
+`google.script.url.getLocation()` を使用します。iframeの `window.location.search` に
+親のtokenがあるとは限りません。これはURL読取APIであり、RPCは必ず `@gasboost/client` を使います。
+フロントルーターや `pathInfo` に依存しません。
 
 ```ts
-const bootstrap = new AppsScriptBootstrap({
-  db,
-  auth,
-  authorization,
-  overrides: {
-    // 他の段階は標準処理を使用。必ず再実行可能にする。
-    migrate: async () => {
-      db.migrate();
-      await seedIdempotently();
-    },
-  },
-  afterInitialize: async ({ id, email }) => {
-    await provisionAdditionalResourcesIdempotently(id, email);
-  },
-});
+import { appsScriptClient } from "@gasboost/client";
+import type { AppType } from "../backend/main";
+
+const initial = JSON.parse(document.getElementById("app-value")!.textContent!);
+const { client } = appsScriptClient<AppType>();
+
+if (!initial.initialized) {
+  google.script.url.getLocation(async (location) => {
+    const token = location.parameter.token;
+    if (!token) return; // Consumerは「初期設定メールを確認してください」等を表示
+    try {
+      const result = await client.initializeApp({ token });
+      // Consumerでresult.initializedに従い通常画面へ切り替える。
+      // 状態を更新して再描画するか、アプリの方針に従って再読込する。
+      renderApplication(result);
+    } catch (error) {
+      renderInitializationError(error); // 未完了のまま再試行可能なUIを表示
+    }
+  });
+}
 ```
 
-`overrides` は `migrate`・`registerAdministrator`・`assignRole`・`notify` を個別に差し替えられます。
-引数は読み取り専用の `{ id, email, name, role }` です。
-登録の差し替えは同じ `id` を持つ User を返す必要があります。
-`afterInitialize` が失敗した場合も完了せず、再試行時はその hook から再開します。
-カスタム処理でも、本人識別・トークン照合・短い Script Lock と実行リースは標準のまま適用します。
+`renderApplication` / `renderInitializationError` はConsumerのUI関数です。
+フロント環境でGAS URL APIの型が未定義の場合は、Consumerで型を定義してください。
+`google.script.run` を直接呼び出す必要はありません。
 
-## 検証
+`handle()` はリンクのtokenを検証して公開状態を返すだけで、**GETでは初期化しません**。
+不正・期限切れ・ロックアウト・別EffectiveUserのリンクではエラーになり、追加メールやDB処理は行いません。
+RPCは公開入口として扱い、トークン・TTL・試行回数・未初期化・リース・発行時EffectiveUserを
+検証してから初期化を始めます。HTMLやGETで検証済みでも、RPCの検証を省略しません。
+通常のGETを一度も経ていないRPC、初期化済みのRPC再実行も拒否します。
+拒否時にDB migration・Auth登録・Role付与・Password Reset通知・hookは実行しません。
+不正トークンの試行回数更新はセキュリティ用のプロパティ更新として行います。
 
-通常は `pnpm --filter @gasboost/bootstrap typecheck` / `test` / `build` を実行します。
-実際の Auth・SheetORM と接続する結合テストは、ビルド済みの auth#49 以降の checkout を指定します。
+## 実行ユーザーとGAS設定
+
+デプロイは `executeAs: USER_DEPLOYING`（自分として実行）を維持します。
+通常利用者へSpreadsheetの直接権限を付与する必要はありません。
+GAS OAuthスコープはDB等に必要なものに加え、MailApp送信用の
+`https://www.googleapis.com/auth/script.send_mail` と `userinfo.email` を設定します。
+初期化リンクのメールは `Session.getEffectiveUser().getEmail()` 宛てに固定です。
+空ならエラーにし、ActiveUserへ切り替えません。
+
+EffectiveUserはデプロイ実行者の識別であり、外部訪問者の本人確認ではありません。
+初期化権限はメールで受け取ったトークンの所持・照合で確認します。
+発行時とGET/RPC時のEffectiveUserが異なれば拒否します。
+Authの `ensureEffectiveUser()` も同じメールを独立して照合し、Sessionを偽装しません。
+トークン入りURLを第三者へ共有・ログ出力したり、HTMLへ埋め込んだりしないでください。
+
+初期化URLは `ScriptApp.getService().getUrl()` の有効な `/exec` URLを使います。
+未デプロイ・`/dev` 等は明示エラーにし、URLを `/exec` へ置換して推測しません。
+同じGASプロジェクトのデプロイはScript Propertiesを共有します。更新時は旧Bootstrap版のデプロイを併用せず、リンク先のデプロイを確認してください。
+
+## ロック・通知・復旧
+
+状態はScript Propertiesの `APP_STATE` にJSONとして保存します。
+長いトークンは2つのGAS UUIDから生成し、既定TTLは30分、最大失敗回数は5回です。
+`tokenTtlMinutes` は1〜1440、`maxAttempts` は1〜100です。短い数値トークンの `tokenDigits` は廃止しました。
+失敗上限後は期限まで正しいtokenも拒否します。期限後の通常GETでだけ再発行します。
+
+通知と初期化は、それぞれScript Lock内で10分の実行リースを取得してから開始します。
+ネイティブロックはプロパティ操作の間だけ保持し、MailApp / DB / Auth / hookを呼ぶ前に解放します。
+同時の通常GETは通知リースを見て重複メールを送らず、同時RPCは初期化リースで拒否されます。
+SheetORM v4も同じLockServiceを利用でき、ScriptLockの入れ子取得・途中解放に依存しません。
+
+通常の例外では自分のリースを解放し、すぐ再試行できます。
+初期化リンク送信の失敗後は、通常GETで同じtokenのメールを再送します。
+送信前に次回試行時刻を保存し、失敗・送信結果不明・チェックポイント失敗時の再送を60秒間抑制します。
+メール内リンクで通知未完了エラーになった場合は、tokenを付けない `/exec` を60秒後に開いて再送してください。
+通知が完了記録される前のRPCは拒否します。
+強制終了やProperties障害でリースが残った場合は、取得から10分後に再試行してください。
+リースは [GASの1実行6分の上限](https://developers.google.com/apps-script/guides/services/quotas#current_limitations)
+より長く、実行中は延長しません。別ランタイムで6分を超える実行を継続する用途は対象外です。
+
+固定管理者ID・本人メール・有効認証方式はDB操作前に保存します。
+migrate → 全有効方式のAccount登録 → Role付与 → Password Reset通知 → hook の段階進捗を保持します。
+両方式有効なら1 User / 2 Accounts / 1管理者Roleです。方式設定が変わった復旧は拒否します。
+Email有効時は推測困難な仮パスワードを使い、本人へはreset linkのみ送信します。
+Password Reset通知が失敗した場合はRPC再試行で新しいreset tokenを発行します。
+完了時は `{ "initialized": true }` のみを保存し、token・リース・復旧情報を消去します。
+初期化済みGETは公開状態だけを返し、メールや登録等の副作用を起こしません。
+
+Spreadsheet・Properties・メールは原子的なトランザクションではありません。
+外部書込後・チェックポイント保存前の停止ではその段階を再実行するため、固定IDでの登録・Role upsert・
+冪等なmigrationとhookが必要です。通知送信後・記録前の停止ではメールが重複し得ます。
+古い所有者は期限や所有者IDの検証により進捗・完了を更新できず、後続リースも解除できません。
+`APP_STATE`破損は明示エラーにし、勝手に別管理者を作り直しません。
+
+## 個別の差し替え
+
+`overrides.migrate` / `registerAdministrator` / `assignRole` / `notify` と
+`afterInitialize` を必要な段階だけ指定できます。`notify` はRPC内のPassword Reset通知の差し替えです。
+初期化リンクは同期GETのMailApp通知で送信します。
+各処理の引数は読み取り専用の `{ id, email, name, role }` で、登録は同じ `id` を返す必要があります。
+カスタム処理もトークン検証とリース取得より後にだけ実行され、再実行可能にしてください。
+
+## 0.1.0からの移行と検証
+
+`middleware()` / `KEY` / `settingsUrl` とScript Properties手入力を標準手順から外し、
+同期GETで `handle(request)`、ログイン認証の登録前に `.calls(bootstrap.handlers())` を使用します。
+`initializeApp` のRPCは引き続き存在します。フロントはメールURLのtokenを読み、型付きClientで呼びます。
+旧形式のチャレンジは通常GETで新しいメールリンクへ置き換えます。管理者ID・進捗は維持し、
+旧ActiveUserと新EffectiveUserが違う場合は自動的に付け替えず拒否します。
+初期化済み状態はそのまま利用できます。復旧のために `APP_STATE` 全体を削除しないでください。
+
+GASの非同期GETを実機検証した記録は `experiments/get-runtime/` に残しています。
+この制約を避けるためにGETとRPCを分離しており、Auth / DBを同期化する必要はありません。
+
+`pnpm typecheck` / `pnpm test` / `pnpm build` に加え、次で実Auth・SheetORM・型付きClientを接続します。
 
 ```sh
-GASBOOST_AUTH_WORKSPACE=/path/to/auth pnpm --filter @gasboost/bootstrap test:integration
+GASBOOST_AUTH_WORKSPACE=/path/to/built/auth pnpm --filter @gasboost/bootstrap test:integration
 ```
 
-CI では Auth API のコミットを固定してこの結合テストも実行します。
-Bootstrap と SheetDB に同一の `NodeLockService` を渡し、同じ scriptId の別リクエストからも
-実行を試みます。migrate・User / Account保存・Role保存・通知・hook・完了更新まで、
-プロパティアクセス時のネイティブロックと、外部処理中のリース排他を検証します。
-テスト中にネイティブロックの競合が起きた場合は、待機時間を短縮して即時失敗させます。
-ロック状態と所有ハンドルは実際の Fake 実装を共有し、独立したbooleanモックは使用しません。
-
-Fake は GAS の6分での強制終了を再現しません。単体テストでは時間を進めて期限切れと
-古い所有者の復帰を擬似的に起こし、チェックポイント拒否と後続リースの保護を確認します。
-実機での入れ子ロック挙動を検証済みとはせず、入れ子を必要としない構成を検証しています。
-パッケージの配布形式は、ルートで App / Bootstrap を pack 後、
-`pnpm --filter @gasboost/bootstrap smoke` で別ディレクトリのConsumerから確認します。
+CIはAuthのAPIコミットを固定し、Bootstrap / SheetDBで同一NodeLockServiceを共有して検証します。
+App / Bootstrapをルートでpackした後、`pnpm --filter @gasboost/bootstrap smoke` で別Consumerの型を確認できます。

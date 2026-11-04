@@ -39,25 +39,18 @@ async関数を宣言しただけのエントリーポイントでも改善しま
 `AsyncEntry.gs.txt` はそのままではGASのソースとしてアップロードされません。
 `.clasp.json`、所有者のメール、プロジェクトID、デプロイID、OAuth認証情報は収録していません。
 
-## #66の実装に対する制約
+## 採用した構成：同期GET + 非同期RPC
 
-現行の `.get()` は同期出力を返す契約です。非同期の `registration.ensure()` や
-`password.forgot()` を呼ぶ `bootstrap.handle()` を、そのままGETの戻り値へ接続することはできません。
-`.get(async () => ...)` への型変更、PromiseからHtmlOutputへのキャスト、
-待機完了を確認せず返すコードでは実機上の問題を解決しません。
+この実測結果に基づき、初期化そのものをGET内で行う案は撤回しました。
+`bootstrap.handle(request)` は同期処理で状態取得・長いtokenの保存・EffectiveUser宛ての
+MailApp通知を行い、公開状態だけを返します。HTMLはConsumerが生成します。
 
-同一GETで初期化を完結させるには、Auth / Repository / Password Reset通知まで
-同期的に完了する正規APIを用意する必要があります。既存のPromise APIや非同期deliveryを、
-戻り値を無視して同期処理として扱うことはできません。
+初期化は `.calls(bootstrap.handlers())` の非同期 `initializeApp({ token })` で行います。
+フロントはメールリンクのtokenをURLから読み、既存の `@gasboost/client` を使用します。
+トークン・TTL・試行回数・発行先EffectiveUser・リース等の検証より前にDB/Auth/Role/通知/hookを実行しません。
 
-別の制約として、Auth 0.8.0の `registration.ensure()` はApps Script認証が有効な場合、
-`Session.getActiveUser().getEmail()` と登録先メールの一致を要求します。
-#66の `USER_DEPLOYING` + EffectiveUserでは、この検証も整合させる必要があります。
-Bootstrap側だけで `getEffectiveUser()` に切り替えたり、Authに偽のSessionを渡して回避したりしません。
+現行のPromise APIを同期化したり、PromiseをHtmlOutputへキャストしたりする必要はありません。
+AuthのActiveUser検証を迂回せず、Auth 0.9.0の専用管理API `ensureEffectiveUser()` を使用します。
+デプロイはUSER_DEPLOYINGを維持し、通常利用者へSpreadsheetの直接権限を求めません。
 
-## この変更の状態
-
-- `AppsScriptHttpRequest.path()` は独立して実装・型チェック・単体テストが可能です。
-- BootstrapのGETハンドラー、EffectiveUserへの初期化リンク通知、Bootstrap 0.2.0は未実装です。
-- 既存のBootstrap 0.1.0の公開APIとリース・復旧処理は維持しています。
-- Issue #66全体の完了条件は満たしていません。同期APIの依存対応と実機再検証が終わるまでDraftを維持し、マージしません。
+詳細な利用方法・復旧・依存リリースはパッケージREADMEを参照してください。

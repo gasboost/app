@@ -33,6 +33,9 @@ importers:
         specifier: workspace:^
         version: link:../app
     devDependencies:
+      '@gasboost/client':
+        specifier: workspace:*
+        version: link:../client
       '@types/google-apps-script':
         specifier: ^2.0.12
         version: 2.0.12
