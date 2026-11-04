@@ -1,0 +1,40 @@
+{
+  "name": "@gasboost/bootstrap",
+  "version": "0.1.0",
+  "description": "First-run initialization for Google Apps Script web applications.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gasboost/app.git",
+    "directory": "packages/bootstrap"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@gasboost/app": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/google-apps-script": "^2.0.12"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "smoke": "node scripts/smoke.mjs",
+    "test:integration": "node --test integration/auth.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

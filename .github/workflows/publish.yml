@@ -22,6 +22,7 @@ jobs:
       publish-client: ${{ steps.versions.outputs.publish-client }}
       publish-bridge: ${{ steps.versions.outputs.publish-bridge }}
       publish-react: ${{ steps.versions.outputs.publish-react }}
+      publish-bootstrap: ${{ steps.versions.outputs.publish-bootstrap }}
 
     steps:
       - name: Checkout
@@ -60,10 +61,11 @@ jobs:
           check_package publish-client packages/client/package.json
           check_package publish-bridge packages/bridge/package.json
           check_package publish-react packages/react/package.json
+          check_package publish-bootstrap packages/bootstrap/package.json
 
   publish:
     needs: check-versions
-    if: ${{ needs.check-versions.outputs.publish-app == 'true' || needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true' || needs.check-versions.outputs.publish-bridge == 'true' }}
+    if: ${{ needs.check-versions.outputs.publish-app == 'true' || needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true' || needs.check-versions.outputs.publish-bridge == 'true' || needs.check-versions.outputs.publish-bootstrap == 'true' }}
     runs-on: ubuntu-latest
 
     permissions:
@@ -98,8 +100,27 @@ jobs:
         run: pnpm --filter @gasboost/app test
 
       - name: Build app
-        if: ${{ needs.check-versions.outputs.publish-app == 'true' }}
+        if: ${{ needs.check-versions.outputs.publish-app == 'true' || needs.check-versions.outputs.publish-bootstrap == 'true' }}
         run: pnpm --filter @gasboost/app build
+
+      - name: Verify bootstrap Auth release
+        if: ${{ needs.check-versions.outputs.publish-bootstrap == 'true' }}
+        run: |
+          npm view '@gasboost/auth@0.8.0' version
+          npm view '@gasboost/auth-sheetorm@0.4.0' version
+          npm view '@gasboost/auth-app@0.6.1' version
+
+      - name: Typecheck bootstrap
+        if: ${{ needs.check-versions.outputs.publish-bootstrap == 'true' }}
+        run: pnpm --filter @gasboost/bootstrap typecheck
+
+      - name: Test bootstrap
+        if: ${{ needs.check-versions.outputs.publish-bootstrap == 'true' }}
+        run: pnpm --filter @gasboost/bootstrap test
+
+      - name: Build bootstrap
+        if: ${{ needs.check-versions.outputs.publish-bootstrap == 'true' }}
+        run: pnpm --filter @gasboost/bootstrap build
 
       - name: Typecheck client
         if: ${{ needs.check-versions.outputs.publish-client == 'true' }}
@@ -175,4 +196,14 @@ jobs:
       - name: Publish react
         if: ${{ needs.check-versions.outputs.publish-react == 'true' }}
         working-directory: packages/react
+        run: pnpm publish --access public --no-git-checks
+
+      - name: Verify bootstrap package contents
+        if: ${{ needs.check-versions.outputs.publish-bootstrap == 'true' }}
+        working-directory: packages/bootstrap
+        run: pnpm pack
+
+      - name: Publish bootstrap
+        if: ${{ needs.check-versions.outputs.publish-bootstrap == 'true' }}
+        working-directory: packages/bootstrap
         run: pnpm publish --access public --no-git-checks
