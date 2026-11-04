@@ -47,6 +47,7 @@ test("callでRPC handlerを登録してdispatchできる", async () => {
 
 test("GET eventをAppsScriptHttpRequestとしてhandlerへ渡す", () => {
   const event = {
+    pathInfo: "bootstrap",
     parameter: {
       id: "123",
       tag: "a",
@@ -60,6 +61,7 @@ test("GET eventをAppsScriptHttpRequestとしてhandlerへ渡す", () => {
   const output = {} as GoogleAppsScript.Content.TextOutput;
 
   const app = new AppsScript().get((request) => {
+    expect(request.path()).toBe("bootstrap");
     expect(request.query("id")).toBe("123");
     expect(request.query()).toEqual({
       id: "123",

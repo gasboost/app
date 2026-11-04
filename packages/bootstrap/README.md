@@ -1,5 +1,10 @@
 # @gasboost/bootstrap
 
+GETベースの `handle(request)` への変更は [Issue #66](https://github.com/gasboost/app/issues/66) で検討中です。
+現行の非同期Auth APIは同期GETへ直接接続できないことを実機で確認しています。
+[Issue #66 の検証結果](https://github.com/gasboost/app/issues/66)を参照してください。
+以下は引き続き0.1.0のAPIです。
+
 GAS Web アプリの初回起動時に、DB migration → 管理者 User / Account 登録 →
 管理者ロール付与 → 初期パスワード設定通知を行います。UI は Consumer 側で実装します。
 

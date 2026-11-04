@@ -3,6 +3,11 @@ export class AppsScriptHttpRequest {
     protected event: GoogleAppsScript.Events.AppsScriptHttpRequestEvent,
   ) {}
 
+  /** GAS e.pathInfo, unchanged; absent when no path information is supplied. */
+  public path(): string | undefined {
+    return this.event.pathInfo;
+  }
+
   public query(): Record<string, string>;
   public query(name: string): string | undefined;
 

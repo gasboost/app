@@ -136,6 +136,11 @@ jobs:
           } from "@gasboost/app";
 
           const app = new AppsScript()
+            .get((request) => {
+              const path: string | undefined = request.path();
+              const token: string | undefined = request.query("token");
+              return HtmlService.createHtmlOutput(JSON.stringify({ path, token }));
+            })
             .call(
               "sum",
               (input: { a: number; b: number }) =>

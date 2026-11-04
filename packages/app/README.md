@@ -71,7 +71,22 @@ request.queries();
 request.queries("tag");
 ```
 
-GET ハンドラは `HtmlOutput` または `TextOutput` を返します。
+`request.path()` は GAS の `e.pathInfo` をそのまま返します（5.4.0以降）。
+`/exec/bootstrap?token=example` へのアクセスでは `"bootstrap"`、パスが未指定なら
+`undefined` です。先頭・末尾の `/` の除去やURLデコードなどの変換は行いません。
+クエリ取得と同時に使用できます。
+
+```ts
+const app = new AppsScript().get((request) => {
+  const path: string | undefined = request.path();
+  const token: string | undefined = request.query("token");
+  return ContentService.createTextOutput(JSON.stringify({ path, token }));
+});
+```
+
+GET ハンドラは同期的に `HtmlOutput` または `TextOutput` を返します。
+Promiseを返すハンドラはサポートしません。この制約の詳細は
+[Issue #66](https://github.com/gasboost/app/issues/66)を参照してください。
 
 ## POST
 

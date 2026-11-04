@@ -6,7 +6,11 @@ const systemStatus: AppsScriptMiddleware<{}, { initialized: boolean }> = (contex
 };
 
 export const app = new AppsScript()
-  .get((_request, context) => {
+  .get((request, context) => {
+    const path: string | undefined = request.path();
+    const token: string | undefined = request.query("token");
+    void path;
+    void token;
     const initialized: boolean = context.state.get("initialized");
     return HtmlService.createHtmlOutput(String(initialized));
   }, [systemStatus])
