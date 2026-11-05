@@ -7,8 +7,7 @@ import type {
   BootstrapAccount,
 } from "./types";
 
-type BootstrapStep =
-  "migrated" | "registered" | "roleAssigned" | "notified" | "hookCompleted";
+type BootstrapStep = "migrated" | "roleAssigned" | "notified" | "hookCompleted";
 
 export class AppsScriptBootstrap {
   // Exceeds the GAS Web App runtime limit (6 min); do not renew from a running request.
@@ -140,19 +139,25 @@ export class AppsScriptBootstrap {
   private async initialize(input: {
     token: string;
   }): Promise<BootstrapPublicState> {
-    const { leaseId, administrator, methods } = this.acquire(input);
+    const { leaseId, administrator: identity, methods } = this.acquire(input);
     try {
       await this.step(leaseId, "migrated", async () => {
         if (this.options.overrides?.migrate)
-          await this.options.overrides.migrate(administrator);
+          await this.options.overrides.migrate(identity);
         else await this.options.db.migrate();
       });
-      await this.step(leaseId, "registered", async () => {
-        const user = this.options.overrides?.registerAdministrator
-          ? await this.options.overrides.registerAdministrator(administrator)
-          : await this.register(administrator, methods);
-        if (user.id !== administrator.id)
-          throw new Error("Registration must preserve the bootstrap user ID");
+      if (!this.withLease(leaseId, (_state, progress) => progress.registered)) {
+        const user = await this.register(identity, methods);
+        this.withLease(leaseId, (state, progress) => {
+          progress.administrator.id = user.id;
+          progress.registered = true;
+          this.write(state);
+        });
+      }
+      const administrator = this.withLease(leaseId, (_state, progress) => {
+        const { id, ...identity } = progress.administrator;
+        if (!id) throw new Error("Registered user ID is missing");
+        return Object.freeze({ ...identity, id });
       });
       await this.step(leaseId, "roleAssigned", async () => {
         if (this.options.overrides?.assignRole)
@@ -213,7 +218,6 @@ export class AppsScriptBootstrap {
       if (!state.progress) {
         state.progress = {
           administrator: {
-            id: Utilities.getUuid(),
             email,
             name: this.options.administrator?.name ?? "システム管理者",
             role: this.options.administrator?.role ?? "管理者",
@@ -240,7 +244,7 @@ export class AppsScriptBootstrap {
         expiresAt: Date.now() + AppsScriptBootstrap.LEASE_MS,
         kind: "initialization",
       };
-      // Commit the fixed administrator ID and lease before any external work.
+      // Commit the recovery identity and lease before any external work.
       this.write(state);
       return {
         leaseId,
@@ -251,80 +255,64 @@ export class AppsScriptBootstrap {
   }
 
   private async register(
-    administrator: BootstrapAdministrator,
+    administrator: Omit<BootstrapAdministrator, "id"> & { id?: string },
     methods: { emailPassword: boolean; appsScript: boolean },
   ): Promise<{ id: string }> {
-    const { auth } = this.options;
-    const { id, name, email } = administrator;
+    const { auth, authRepository } = this.options;
+    const { name, email } = administrator;
     const primary = methods.appsScript ? "appsScript" : "emailPassword";
     const password = () => Utilities.getUuid() + Utilities.getUuid();
-    const check = (account: BootstrapAccount, provider: string) => {
+    const check = (
+      account: BootstrapAccount,
+      provider: string,
+      userId: string,
+    ) => {
+      if (account.userId !== userId)
+        throw new Error("Account belongs to another user");
       if (
-        account.userId !== id ||
         account.identity.providerName !== provider ||
         account.identity.accountId !== email
-      ) {
-        throw new Error(
-          "Account does not belong to the fixed administrator identity",
-        );
-      }
+      )
+        throw new Error("Account identity is inconsistent");
     };
-    let user = await auth.user.find(id);
-    if (!user) {
-      const orphan = await auth.account.findByIdentity(primary, email);
-      if (orphan) {
-        check(orphan, primary);
-        // Repair a missing User row only for an Account belonging to our pre-recorded ID.
-        await auth.user.create({ id, name });
-        user = await auth.user.find(id);
-        if (!user) throw new Error("User recovery was not persisted");
-      } else {
-        user = methods.appsScript
-          ? await auth.registration.appsScript({ id, name, email })
-          : await auth.registration.email({
-              id,
-              name,
-              email,
-              password: password(),
-            });
+    const account = await authRepository.account.findByIdentity(primary, email);
+    let user;
+    if (account) {
+      user = await authRepository.user.find(account.userId);
+      if (!user) throw new Error("Registered user was not found");
+      check(account, primary, user.id);
+    } else {
+      // A saved ID without its Account indicates data loss, not a new registration.
+      if (administrator.id) throw new Error("Registered account was not found");
+      user = methods.appsScript
+        ? await auth.registration.appsScript({ name, email })
+        : await auth.registration.email({ name, email, password: password() });
+    }
+    if (!user.id || (administrator.id && administrator.id !== user.id))
+      throw new Error("Registered user ID is inconsistent");
+    const primaryAccount = user.accounts.find(
+      (entry) =>
+        entry.identity.providerName === primary &&
+        entry.identity.accountId === email,
+    );
+    if (!primaryAccount) throw new Error("Registered account is inconsistent");
+    check(primaryAccount, primary, user.id);
+    if (methods.appsScript && methods.emailPassword) {
+      const second = await authRepository.account.findByIdentity(
+        "emailPassword",
+        email,
+      );
+      if (second) check(second, "emailPassword", user.id);
+      else {
+        const added = await auth.account.add(user.id, {
+          provider: "emailPassword",
+          email,
+          password: password(),
+        });
+        check(added, "emailPassword", user.id);
       }
     }
-    if (user.id !== id)
-      throw new Error("Registration must preserve the bootstrap user ID");
-    for (const provider of ["appsScript", "emailPassword"] as const) {
-      if (!methods[provider]) continue;
-      const account = user.accounts.find(
-        (account) => account.identity.providerName === provider,
-      );
-      if (account) {
-        check(account, provider);
-        continue;
-      }
-      const existing = await auth.account.findByIdentity(provider, email);
-      if (existing) {
-        check(existing, provider);
-        const refreshed = await auth.user.find(id);
-        if (
-          !refreshed?.accounts.some(
-            (account) =>
-              account.identity.providerName === provider &&
-              account.identity.accountId === email &&
-              account.userId === id,
-          )
-        ) {
-          throw new Error("Account recovery is inconsistent");
-        }
-        user = refreshed;
-        continue;
-      }
-      await auth.account.add(
-        id,
-        provider === "emailPassword"
-          ? { provider, email, password: password() }
-          : { provider, email },
-      );
-    }
-    return { id };
+    return { id: user.id };
   }
 
   private async step(
@@ -454,7 +442,15 @@ export class AppsScriptBootstrap {
     }
     if (
       state.progress &&
-      (!state.progress.administrator?.id ||
+      (!state.progress.administrator ||
+        (state.progress.administrator.id !== undefined &&
+          (typeof state.progress.administrator.id !== "string" ||
+            !state.progress.administrator.id)) ||
+        ((state.progress.registered ||
+          state.progress.roleAssigned ||
+          state.progress.notified ||
+          state.progress.hookCompleted) &&
+          !state.progress.administrator.id) ||
         !state.progress.administrator.email ||
         typeof state.progress.administrator.name !== "string" ||
         typeof state.progress.administrator.role !== "string" ||

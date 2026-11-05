@@ -24,6 +24,7 @@ try {
         "@gasboost/app": `file:${join(root, app)}`,
         "@gasboost/bootstrap": `file:${join(root, bootstrap)}`,
         "@gasboost/client": "^0.5.0",
+        "@gasboost/auth": "0.9.0",
       },
       devDependencies: {
         typescript: "^7.0.2",
@@ -38,18 +39,23 @@ try {
 import { AppsScript, type InferAppsScript } from "@gasboost/app";
 import { AppsScriptBootstrap, type BootstrapPublicState } from "@gasboost/bootstrap";
 import { appsScriptClient } from "@gasboost/client";
+import type { AppsScriptAuthRepository } from "@gasboost/auth";
 
+const authRepository: AppsScriptAuthRepository = {
+  user: { async find(_id) { return null; }, async create(user) { return user; } },
+  account: { async findByIdentity(_provider, _email) { return null; } },
+  passwordCredential: { async findByResetTokenHash(_hash) { return null; }, async save(_credential) {} },
+};
 const bootstrap = new AppsScriptBootstrap({
+  authRepository,
   db: { migrate() {} },
   auth: {
     registration: {
       methods: { emailPassword: false, appsScript: true },
-      async appsScript(input) { return { id: input.id, accounts: [] }; },
-      async email(input) { return { id: input.id, accounts: [] }; },
+      async appsScript(input) { return { id: "generated", accounts: [] }; },
+      async email(input) { return { id: "generated", accounts: [] }; },
     },
-    user: { async find(_id) { return null; }, async create(input) { return { id: input.id, accounts: [] }; } },
     account: {
-      async findByIdentity(_provider, _email) { return null; },
       async add(userId, input) { return { userId, identity: { providerName: input.provider, accountId: input.email } }; },
     },
   },
@@ -61,7 +67,7 @@ const app = new AppsScript().get(request => {
   return {} as GoogleAppsScript.HTML.HtmlOutput;
 }).calls(bootstrap.handlers());
 type API = InferAppsScript<typeof app>;
-const input: API["initializeApp"]["input"] = { token: "000001" };
+const input: API["initializeApp"]["input"] = { token: "from-email" };
 if (false) {
   const { client } = appsScriptClient<API>();
   const result: Promise<BootstrapPublicState> = client.initializeApp(input);

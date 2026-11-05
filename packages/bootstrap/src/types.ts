@@ -1,3 +1,5 @@
+import type { AppsScriptAuthRepository } from "@gasboost/auth";
+
 /** Safe to embed in HTML. Secrets and recovery data never appear here. */
 export type BootstrapPublicState = {
   initialized: boolean;
@@ -20,26 +22,13 @@ export interface BootstrapAuth {
       readonly appsScript: boolean;
     };
     email(input: {
-      id: string;
       name: string;
       email: string;
       password: string;
     }): Promise<BootstrapUser>;
-    appsScript(input: {
-      id: string;
-      name: string;
-      email: string;
-    }): Promise<BootstrapUser>;
-  };
-  user: {
-    find(id: string): Promise<BootstrapUser | null>;
-    create(input: { id: string; name: string }): Promise<BootstrapUser>;
+    appsScript(input: { name: string; email: string }): Promise<BootstrapUser>;
   };
   account: {
-    findByIdentity(
-      provider: "appsScript" | "emailPassword",
-      email: string,
-    ): Promise<BootstrapAccount | null>;
     add(
       userId: string,
       input:
@@ -60,6 +49,8 @@ export type BootstrapContext = Readonly<BootstrapAdministrator>;
 export type BootstrapOptions = {
   db: { migrate(): void | Promise<void> };
   auth: BootstrapAuth;
+  /** The same repository instance used to construct auth. */
+  authRepository: AppsScriptAuthRepository;
   authorization: {
     role: { assign(userId: string, role: string): Promise<void> };
   };
@@ -68,8 +59,9 @@ export type BootstrapOptions = {
   maxAttempts?: number;
   /** Replacements must be idempotent: a process may stop after an external write. */
   overrides?: {
-    migrate?(context: BootstrapContext): void | Promise<void>;
-    registerAdministrator?(context: BootstrapContext): Promise<{ id: string }>;
+    migrate?(
+      context: Readonly<Omit<BootstrapAdministrator, "id"> & { id?: string }>,
+    ): void | Promise<void>;
     assignRole?(context: BootstrapContext): Promise<void>;
     notify?(context: BootstrapContext): Promise<void>;
   };
@@ -94,7 +86,7 @@ export type AppState = {
     kind?: "notification" | "initialization";
   };
   progress?: {
-    administrator: BootstrapAdministrator;
+    administrator: Omit<BootstrapAdministrator, "id"> & { id?: string };
     methods: { emailPassword: boolean; appsScript: boolean };
     migrated?: boolean;
     registered?: boolean;

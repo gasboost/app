@@ -1,35 +1,26 @@
-// Run after building both workspaces:
-// GASBOOST_AUTH_WORKSPACE=/path/to/auth pnpm --filter @gasboost/bootstrap test:integration
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
 import { test } from "node:test";
 import { AppsScriptBootstrap } from "../dist/index.js";
 import { AppsScript, AppsScriptHttpRequest } from "@gasboost/app";
 import { appsScriptClient } from "@gasboost/client";
 
-const workspace = process.env.GASBOOST_AUTH_WORKSPACE;
-const requireCore = workspace
-  ? createRequire(resolve(workspace, "packages/auth-core/package.json"))
-  : createRequire(import.meta.url);
-const requireAdapter = workspace
-  ? createRequire(resolve(workspace, "packages/auth-sheetorm/package.json"))
-  : createRequire(import.meta.url);
+const requirePublished = createRequire(import.meta.url);
 const {
   AppsScriptAuth,
   AppsScriptAuthorization,
   createAuthTables,
   createAuthorizationTables,
-} = requireCore(workspace ? "./dist/index.js" : "@gasboost/auth");
-const { AuthorizationPolicy } = requireCore(
-  workspace ? "./dist/authorization/index.js" : "@gasboost/auth/authorization",
+} = requirePublished("@gasboost/auth");
+const { AuthorizationPolicy } = requirePublished(
+  "@gasboost/auth/authorization",
 );
 const { SheetOrmAuthRepository, SheetOrmAuthorizationRepository } =
-  requireAdapter(workspace ? "./dist/index.js" : "@gasboost/auth-sheetorm");
-const { SheetDB, SheetTable } = requireAdapter("@gasboost/sheetorm");
-const { NodeUtilities } = requireCore("@gasboost/fake-node");
-const { NodeLockService } = requireAdapter("@gasboost/fake-node");
-const { InMemoryCacheService } = requireCore("@gasboost/fake-core");
+  requirePublished("@gasboost/auth-sheetorm");
+const { SheetDB, SheetTable } = requirePublished("@gasboost/sheetorm");
+const { NodeUtilities } = requirePublished("@gasboost/fake-node");
+const { NodeLockService } = requirePublished("@gasboost/fake-node");
+const { InMemoryCacheService } = requirePublished("@gasboost/fake-core");
 
 // Real Auth and DB APIs, in-memory sheet gateway; no Google services or mail are contacted.
 class Gateway {
@@ -227,6 +218,7 @@ for (const [emailPassword, appsScript] of [
     const options = {
       db,
       auth,
+      authRepository: repository,
       authorization,
       afterInitialize: () => assertExclusive("hook"),
     };
@@ -332,9 +324,10 @@ for (const [emailPassword, appsScript] of [
       client.initializeApp(input),
       /registration write interrupted/,
     );
-    const fixedId = JSON.parse(raw).progress.administrator.id;
+    const registeredId = db.table("user").find()[0].id;
+    assert.equal(JSON.parse(raw).progress.administrator.id, undefined);
     assert.equal(db.table("user").find().length, 1);
-    assert.equal(db.table("user").find()[0].id, fixedId);
+    assert.ok(registeredId);
     if (emailPassword && appsScript) {
       await assert.rejects(
         client.initializeApp(input),
@@ -366,6 +359,7 @@ for (const [emailPassword, appsScript] of [
     gateway.onWrite = () => {};
     const users = db.table("user").find();
     assert.equal(users.length, 1);
+    assert.equal(users[0].id, registeredId);
     assert.equal(
       db.table("account").find().length,
       emailPassword && appsScript ? 2 : 1,

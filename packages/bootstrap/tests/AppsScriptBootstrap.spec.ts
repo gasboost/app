@@ -1,3 +1,4 @@
+import { User, Account, type AppsScriptAuthRepository } from "@gasboost/auth";
 import {
   afterEach,
   beforeEach,
@@ -65,32 +66,25 @@ function fixture(overrides: Partial<BootstrapOptions> = {}) {
       order.push("migrate");
     }),
   };
-  const users = new Map<
-    string,
-    {
-      id: string;
-      accounts: {
-        userId: string;
-        identity: { providerName: string; accountId: string };
-      }[];
-    }
-  >();
-  const accounts: {
-    userId: string;
-    identity: { providerName: string; accountId: string };
-  }[] = [];
-  const makeAccount = (userId: string, provider: string, email: string) => ({
-    userId,
-    identity: { providerName: provider, accountId: email },
-  });
+  const users = new Map<string, User>();
+  const accounts: Account[] = [];
+  const makeAccount = (userId: string, provider: string, email: string) =>
+    new Account({
+      id: utilities.getUuid(),
+      userId,
+      identity: {
+        providerName: provider as "appsScript" | "emailPassword",
+        accountId: email,
+      },
+    });
   const registration = (provider: string) =>
-    vi.fn(async (input: { id: string; email: string }) => {
+    vi.fn(async (input: { name: string; email: string }) => {
       order.push("register");
-      if (users.has(input.id)) throw new Error("User already exists");
-      const account = makeAccount(input.id, provider, input.email);
+      const id = utilities.getUuid();
+      const account = makeAccount(id, provider, input.email);
       accounts.push(account);
-      const user = { id: input.id, accounts: [account] };
-      users.set(input.id, user);
+      const user = new User({ id, name: input.name, accounts: [account] });
+      users.set(id, user);
       return user;
     });
   const auth = {
@@ -99,31 +93,7 @@ function fixture(overrides: Partial<BootstrapOptions> = {}) {
       appsScript: registration("appsScript"),
       email: registration("emailPassword"),
     },
-    user: {
-      find: vi.fn(async (id: string) => {
-        const user = users.get(id);
-        return user
-          ? {
-              ...user,
-              accounts: accounts.filter((account) => account.userId === id),
-            }
-          : null;
-      }),
-      create: vi.fn(async (input: { id: string; name: string }) => {
-        const user = { id: input.id, accounts: [] };
-        users.set(input.id, user);
-        return user;
-      }),
-    },
     account: {
-      findByIdentity: vi.fn(
-        async (provider: string, email: string) =>
-          accounts.find(
-            (account) =>
-              account.identity.providerName === provider &&
-              account.identity.accountId === email,
-          ) ?? null,
-      ),
       add: vi.fn(
         async (id: string, input: { provider: string; email: string }) => {
           const account = makeAccount(id, input.provider, input.email);
@@ -138,6 +108,37 @@ function fixture(overrides: Partial<BootstrapOptions> = {}) {
       }),
     },
   };
+  const authRepository = {
+    user: {
+      find: vi.fn(async (id: string) => {
+        const user = users.get(id);
+        return user
+          ? new User({
+              ...user,
+              accounts: accounts.filter((account) => account.userId === id),
+            })
+          : null;
+      }),
+      create: vi.fn(async (user: User) => {
+        users.set(user.id, user);
+        return user;
+      }),
+    },
+    account: {
+      findByIdentity: vi.fn(
+        async (provider: string, email: string) =>
+          accounts.find(
+            (account) =>
+              account.identity.providerName === provider &&
+              account.identity.accountId === email,
+          ) ?? null,
+      ),
+    },
+    passwordCredential: {
+      findByResetTokenHash: vi.fn(async (_hash: string) => null),
+      save: vi.fn(async (_credential: unknown) => {}),
+    },
+  } satisfies AppsScriptAuthRepository;
   const authorization = {
     role: {
       assign: vi.fn(async () => {
@@ -145,7 +146,7 @@ function fixture(overrides: Partial<BootstrapOptions> = {}) {
       }),
     },
   };
-  const options = { db, auth, authorization, ...overrides };
+  const options = { db, auth, authRepository, authorization, ...overrides };
   const bootstrap = new AppsScriptBootstrap(options);
   let publicState: BootstrapPublicState | undefined;
   const app = new AppsScript()
@@ -177,6 +178,7 @@ function fixture(overrides: Partial<BootstrapOptions> = {}) {
     setState,
     db,
     auth,
+    authRepository,
     options,
     authorization,
     order,
@@ -408,8 +410,10 @@ describe("registration and recovery", () => {
       const input = (
         appsScript ? f.auth.registration.appsScript : f.auth.registration.email
       ).mock.calls[0][0];
+      expect(input).not.toHaveProperty("id");
+      expect(input.email).toBe("admin@example.com");
       expect(f.authorization.role.assign).toHaveBeenCalledExactlyOnceWith(
-        input.id,
+        [...f.users.keys()][0],
         "管理者",
       );
       expect(f.state()).toEqual({ initialized: true });
@@ -453,7 +457,8 @@ describe("registration and recovery", () => {
       throw new Error("interrupted after write");
     });
     await expect(f.initialize()).rejects.toThrow("interrupted after write");
-    const id = f.state().progress!.administrator.id;
+    const id = [...f.users.keys()][0];
+    expect(f.state().progress!.administrator.id).toBeUndefined();
     await f.initialize();
     expect(f.auth.registration.appsScript).toHaveBeenCalledOnce();
     expect(f.users.size).toBe(1);
@@ -474,12 +479,15 @@ describe("registration and recovery", () => {
       save(key, value);
     });
     await expect(f.initialize()).rejects.toThrow("properties unavailable");
-    const id = f.state().progress!.administrator.id;
+    const id = [...f.users.keys()][0];
+    expect(f.state().progress!.administrator.id).toBeUndefined();
     expect(f.state().progress?.registered).toBeUndefined();
     await f.initialize();
-    expect(
-      f.auth.registration.appsScript.mock.calls.map(([input]) => input.id),
-    ).toEqual([id]);
+    expect([...f.users.keys()]).toEqual([id]);
+    expect(f.auth.registration.appsScript).toHaveBeenCalledExactlyOnceWith({
+      name: "システム管理者",
+      email: "admin@example.com",
+    });
     expect(f.state().initialized).toBe(true);
   });
   it("rejects a different recovery user and changed provider configuration", async () => {
@@ -554,12 +562,11 @@ describe("registration and recovery", () => {
     await first;
     expect(f.state()).toEqual({ initialized: true });
   });
-  it("recovers a terminated execution only after its lease expires, preserving the user ID", async () => {
+  it("reclaims a terminated execution after lease expiry without rerunning migration", async () => {
     const f = fixture();
     f.get();
     const progress = {
       administrator: {
-        id: "original-admin",
         email: "admin@example.com",
         name: "Admin",
         role: "管理者",
@@ -578,9 +585,10 @@ describe("registration and recovery", () => {
     vi.advanceTimersByTime(4 * 60_000);
     await f.initialize();
     expect(f.db.migrate).not.toHaveBeenCalled();
-    expect(f.auth.registration.appsScript).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "original-admin" }),
-    );
+    expect(f.auth.registration.appsScript).toHaveBeenCalledWith({
+      name: "Admin",
+      email: "admin@example.com",
+    });
     expect(f.state()).toEqual({ initialized: true });
   });
   it("fences an expired owner and never clears its successor's lease", async () => {
@@ -669,6 +677,7 @@ describe("rejected input never reaches initialization side effects", () => {
     "expired",
     "locked",
     "owner",
+    "empty-owner",
     "lease",
     "initialized",
     "undelivered",
@@ -678,9 +687,6 @@ describe("rejected input never reaches initialization side effects", () => {
     async (reason) => {
       const hooks = {
         migrate: vi.fn(async () => {}),
-        registerAdministrator: vi.fn(async (input: BootstrapContext) => ({
-          id: input.id,
-        })),
         assignRole: vi.fn(async () => {}),
         notify: vi.fn(async () => {}),
       };
@@ -694,6 +700,8 @@ describe("rejected input never reaches initialization side effects", () => {
       if (reason === "locked") state.bootstrap!.attempts = 5;
       if (reason === "owner")
         f.effectiveUser.getEmail.mockReturnValue("visitor@example.com");
+      if (reason === "empty-owner")
+        f.effectiveUser.getEmail.mockReturnValue("");
       if (reason === "lease")
         state.lease = {
           id: "notification",
@@ -709,6 +717,11 @@ describe("rejected input never reaches initialization side effects", () => {
       for (const fn of [
         f.db.migrate,
         f.auth.registration.appsScript,
+        f.auth.registration.email,
+        f.auth.account.add,
+        f.authRepository.account.findByIdentity,
+        f.authRepository.user.find,
+        f.authRepository.user.create,
         f.authorization.role.assign,
         f.auth.password.forgot,
         ...Object.values(hooks),
@@ -738,6 +751,11 @@ describe("rejected input never reaches initialization side effects", () => {
       for (const fn of [
         f.db.migrate,
         f.auth.registration.appsScript,
+        f.auth.registration.email,
+        f.auth.account.add,
+        f.authRepository.account.findByIdentity,
+        f.authRepository.user.find,
+        f.authRepository.user.create,
         f.authorization.role.assign,
         f.auth.password.forgot,
         afterInitialize,
@@ -796,12 +814,12 @@ it.each(["", "visitor@example.com", " admin@example.com"])(
     await expect(f.initialize()).rejects.toThrow("Active and effective users");
     for (const fn of [
       f.db.migrate,
-      f.auth.user.find,
-      f.auth.user.create,
+      f.authRepository.user.find,
+      f.authRepository.user.create,
       f.auth.registration.email,
       f.auth.registration.appsScript,
       f.auth.account.add,
-      f.auth.account.findByIdentity,
+      f.authRepository.account.findByIdentity,
       f.authorization.role.assign,
       f.auth.password.forgot,
       hook,
@@ -810,54 +828,74 @@ it.each(["", "visitor@example.com", " admin@example.com"])(
   },
 );
 
-it.each(["user-only", "orphan", "foreign"])(
-  "recovers persisted rows safely: %s",
-  async (partial) => {
-    const f = fixture();
-    f.get();
-    f.setState({
-      ...f.state(),
-      progress: {
-        administrator: {
-          id: "stable",
-          name: "Admin",
-          email: "admin@example.com",
-          role: "管理者",
-        },
-        methods: { appsScript: true, emailPassword: true },
-        migrated: true,
-      },
-    });
-    if (partial === "user-only")
-      f.users.set("stable", { id: "stable", accounts: [] });
-    else
-      f.accounts.push({
-        userId: partial === "foreign" ? "another-user" : "stable",
+it.each([
+  "existing",
+  "missing-user",
+  "foreign-second",
+  "wrong-user",
+  "wrong-identity",
+  "missing-user-account",
+])("checks persisted registration consistency: %s", async (partial) => {
+  const f = fixture();
+  f.get();
+  const first = new Account({
+    id: "first",
+    userId: "stable",
+    identity: { providerName: "appsScript", accountId: "admin@example.com" },
+  });
+  f.accounts.push(first);
+  if (partial !== "missing-user")
+    f.users.set(
+      "stable",
+      new User({ id: "stable", name: "Admin", accounts: [first] }),
+    );
+  if (partial === "foreign-second")
+    f.accounts.push(
+      new Account({
+        id: "second",
+        userId: "other",
         identity: {
-          providerName: "appsScript",
+          providerName: "emailPassword",
           accountId: "admin@example.com",
         },
-      });
-    if (partial === "foreign") {
-      await expect(f.initialize()).rejects.toThrow(
-        "fixed administrator identity",
-      );
-      expect(f.auth.user.create).not.toHaveBeenCalled();
-      expect(f.auth.account.add).not.toHaveBeenCalled();
-      expect(f.authorization.role.assign).not.toHaveBeenCalled();
-    } else {
-      await f.initialize();
-      expect(f.users.size).toBe(1);
-      expect(f.accounts).toHaveLength(2);
-      expect(f.auth.registration.appsScript).not.toHaveBeenCalled();
-      expect(f.auth.registration.email).not.toHaveBeenCalled();
-      expect(f.authorization.role.assign).toHaveBeenCalledExactlyOnceWith(
-        "stable",
-        "管理者",
-      );
-    }
-  },
-);
+      }),
+    );
+  if (partial === "wrong-user")
+    f.authRepository.user.find.mockResolvedValueOnce(
+      new User({ id: "other", name: "Other", accounts: [first] }),
+    );
+  if (partial === "wrong-identity")
+    f.authRepository.account.findByIdentity.mockResolvedValueOnce(
+      new Account({
+        ...first,
+        identity: {
+          providerName: "appsScript",
+          accountId: "other@example.com",
+        },
+      }),
+    );
+  if (partial === "missing-user-account")
+    f.authRepository.user.find.mockResolvedValueOnce(
+      new User({ id: "stable", name: "Admin", accounts: [] }),
+    );
+  if (partial === "existing") {
+    await f.initialize();
+    expect(f.users.size).toBe(1);
+    expect(f.accounts).toHaveLength(2);
+    expect(f.authorization.role.assign).toHaveBeenCalledExactlyOnceWith(
+      "stable",
+      "管理者",
+    );
+  } else {
+    await expect(f.initialize()).rejects.toThrow();
+    expect(f.authRepository.user.create).not.toHaveBeenCalled();
+    expect(f.auth.account.add).not.toHaveBeenCalled();
+    expect(f.authorization.role.assign).not.toHaveBeenCalled();
+    expect(f.auth.password.forgot).not.toHaveBeenCalled();
+  }
+  expect(f.auth.registration.appsScript).not.toHaveBeenCalled();
+  expect(f.auth.registration.email).not.toHaveBeenCalled();
+});
 
 it("does not add a second Account twice after an interrupted Account write", async () => {
   const f = fixture();

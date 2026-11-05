@@ -1,10 +1,12 @@
-import { AppsScriptAuth } from "@gasboost/auth";
+import { AppsScriptAuth, type AppsScriptAuthRepository } from "@gasboost/auth";
 import { AppsScript, type InferAppsScript } from "@gasboost/app";
 import { AppsScriptBootstrap, type BootstrapPublicState } from "../dist";
 
 declare const auth: AppsScriptAuth;
+declare const authRepository: AppsScriptAuthRepository;
 const bootstrap = new AppsScriptBootstrap({
   auth,
+  authRepository,
   db: { migrate() {} },
   authorization: { role: { async assign(_id: string, _role: string) {} } },
 });

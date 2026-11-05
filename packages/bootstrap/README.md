@@ -8,12 +8,13 @@ HTML・テンプレート変数・タイトル・UIはConsumerが生成します
 
 ```sh
 pnpm add @gasboost/app@^5.4.0 @gasboost/bootstrap@^0.2.0 @gasboost/client@^0.5.0
-pnpm add @gasboost/auth@^0.10.0 @gasboost/auth-sheetorm@^0.4.2 @gasboost/auth-app@^0.6.3
+pnpm add @gasboost/auth@^0.9.0 @gasboost/auth-sheetorm@^0.4.1 @gasboost/auth-app@^0.6.2
 ```
 
-標準登録は固定User ID指定と汎用User / Account参照に対応するAuth 0.10.0以降を必要とします。
+標準登録と復旧には公開済みAuth 0.9.0のRegistration / Account APIとRepository APIを使用します。
 Auth / DB / Password Resetは非同期の正規APIを使用します。
-Bootstrapは公開APIの構造型に依存し、AuthやClientをruntime importしません。
+`authRepository` はAuthが公開する `AppsScriptAuthRepository` 型をそのまま使用します。
+AuthやClientをruntime importしません。
 Clientは既存APIを使用するためversion bumpはありません。
 
 ## Backend
@@ -21,6 +22,9 @@ Clientは既存APIを使用するためversion bumpはありません。
 `db`・`auth`・`authorization` は設定済みの `SheetDB`・`AppsScriptAuth`・
 `AppsScriptAuthorization` です。DBにはAuth / Authorizationのテーブルを含めます。
 Email/Password有効時は `emailPassword.passwordReset.delivery` を設定してください。
+`authRepository` は `auth` の生成時に渡したものと同じRepositoryインスタンスを指定します。
+初期化完了までは、両方式の `isSignupEnabled: false` 等のサーバー設定で通常の自己登録を禁止してください。
+Bootstrapの管理用Registration APIは通常のSignUp RPCを経由しません。
 
 ```ts
 import { AppsScript, type InferAppsScript } from "@gasboost/app";
@@ -30,6 +34,7 @@ import { AppsScriptBootstrap } from "@gasboost/bootstrap";
 const bootstrap = new AppsScriptBootstrap({
   db,
   auth,
+  authRepository,
   authorization,
   tokenTtlMinutes: 30,
   maxAttempts: 5,
@@ -158,7 +163,7 @@ SheetORM v4も同じLockServiceを利用でき、ScriptLockの入れ子取得・
 リースは [GASの1実行6分の上限](https://developers.google.com/apps-script/guides/services/quotas#current_limitations)
 より長く、実行中は延長しません。別ランタイムで6分を超える実行を継続する用途は対象外です。
 
-固定管理者ID・本人メール・有効認証方式はDB操作前に保存します。
+本人メール・有効認証方式はDB操作前に保存し、Authが採番したUser IDは登録完了時に記録します。
 migrate → 全有効方式のAccount登録 → Role付与 → Password Reset通知 → hook の段階進捗を保持します。
 両方式有効なら1 User / 2 Accounts / 1管理者Roleです。方式設定が変わった復旧は拒否します。
 Email有効時は推測困難な仮パスワードを使い、本人へはreset linkのみ送信します。
@@ -167,17 +172,18 @@ Password Reset通知が失敗した場合はRPC再試行で新しいreset token�
 初期化済みGETは公開状態だけを返し、メールや登録等の副作用を起こしません。
 
 Spreadsheet・Properties・メールは原子的なトランザクションではありません。
-外部書込後・チェックポイント保存前の停止ではその段階を再実行するため、固定IDでの登録・Role upsert・
-冪等なmigrationとhookが必要です。通知送信後・記録前の停止ではメールが重複し得ます。
+外部書込後・チェックポイント保存前の停止ではRepositoryから登録済みUserを復元します。
+Role upsert・冪等なmigrationとhookが必要です。通知送信後・記録前の停止ではメールが重複し得ます。
 古い所有者は期限や所有者IDの検証により進捗・完了を更新できず、後続リースも解除できません。
 `APP_STATE`破損は明示エラーにし、勝手に別管理者を作り直しません。
 
 ## 個別の差し替え
 
-`overrides.migrate` / `registerAdministrator` / `assignRole` / `notify` と
+`overrides.migrate` / `assignRole` / `notify` と
 `afterInitialize` を必要な段階だけ指定できます。`notify` はRPC内のPassword Reset通知の差し替えです。
 初期化リンクは同期GETのMailApp通知で送信します。
-各処理の引数は読み取り専用の `{ id, email, name, role }` で、登録は同じ `id` を返す必要があります。
+Role・通知・完了hookの引数は読み取り専用の `{ id, email, name, role }` です。
+Migration時点では登録前のため `id` は未設定の場合があります。
 カスタム処理もトークン検証とリース取得より後にだけ実行され、再実行可能にしてください。
 
 ## 登録と復旧に使用する汎用API
@@ -186,25 +192,29 @@ RPC入口でtoken・TTL・試行回数・通知状態・発行先・リースと
 ActiveUser / EffectiveUserの非空・一致を確認した後にだけ、次を実行します。
 
 1. DB migration。
-2. `auth.user.find(fixedId)` で既存Userを再取得。存在しなければ
-   `registration.appsScript({ id: fixedId, name, email })`、またはEmailのみの場合
-   `registration.email({ id: fixedId, name, email, password })` で最初のAccountとUserを新規登録。
-3. 両方式が有効なら、同じUserに `auth.account.add(user.id, { provider: "emailPassword", email, password })`。
-4. `authorization.role.assign()`、Email有効時の `auth.password.forgot()`、完了hook、完了状態保存。
+2. 最初のprovider（Apps Script有効なら `appsScript`、それ以外は `emailPassword`）で
+   `authRepository.account.findByIdentity(provider, email)` を検索。
+   存在すれば `authRepository.user.find(account.userId)` で前回のUserを復元し、Identityとの整合性を検査。
+   なければ `auth.registration.appsScript({ name, email })`、または
+   `auth.registration.email({ name, email, password })` で最初のAccountとUserを新規登録。
+   User IDはAuthが内部採番します。
+3. 両方式が有効なら `authRepository.account.findByIdentity("emailPassword", email)` を検索。
+   同じUserなら追加を省略し、別Userならエラー。未登録なら
+   `auth.account.add(user.id, { provider: "emailPassword", email, password })` で追加。
+4. User IDと登録完了を同じ進捗保存で記録し、`authorization.role.assign()`、
+   Email有効時の `auth.password.forgot()`、完了hook、完了状態保存。
 
-固定IDはDB操作より前にプロパティへ保存します。登録保存後・進捗保存前の停止では
-同じIDを `auth.user.find()` で再取得し、保存済みのAccountを再作成せず不足分だけ追加します。
-User行だけ保存された場合も `account.add()` で修復します。
-User行が失われた孤立Accountの場合は `account.findByIdentity()` で固定IDへの帰属を確認し、
-汎用 `auth.user.create({ id, name })` で空Userを復旧してから再取得します。
-メール一致だけで別Userを採用せず、ID・provider・emailの矛盾はRole付与前に拒否します。
-登録・Account追加が成功直後に例外や停止になった場合も、保存済み認証情報を維持します。
+未初期化で既存Identityがある場合は、前回Bootstrapの登録後・進捗保存前に停止したものとして扱います。
+このため、初期化前に通常のユーザー登録を許さない運用が必須です。
+User欠落やAccountとUserの矛盾はエラーにし、User行を自動作成して補修しません。
+登録・Account追加直後の停止でも同じUserを復元し、既存の認証情報を上書きしません。
+仮パスワードは不足Accountの新規作成時だけ生成し、プロパティや公開状態には保存しません。
 
 ## 検証と依存リリース
 
 CIは `integration/package.json` の公開済みレジストリ版をインストールし、
 実Auth型とのConsumer型チェックと結合テストを実行します。未マージソースのcheckoutは行いません。
-必要版が公開されていなければCI / publishを通さず、Draftのまま待機します。
+Auth 0.9.0 / Auth SheetORM 0.4.1の公開版で検証します。
 App 5.4.0を先に公開し、その後Bootstrap 0.2.0を公開します。
 
 ```sh
@@ -212,9 +222,6 @@ npm --prefix packages/bootstrap/integration install --ignore-scripts --no-audit 
 pnpm --filter @gasboost/bootstrap exec tsc -p integration/tsconfig.json
 pnpm --filter @gasboost/bootstrap test:integration
 ```
-
-ローカルの依存API候補を評価する場合のみ `GASBOOST_AUTH_WORKSPACE=/path/to/built/auth` を指定できます。
-その結果を公開済み版での検証成功とは扱いません。CIはこの上書きを使用しません。
 
 `pnpm typecheck` / `pnpm test` / `pnpm build` で型と単体を検証します。
 結合テストではBootstrapとSheetDBで同じNodeLockServiceを共有し、認証3パターンと

@@ -27,7 +27,8 @@
   },
   "devDependencies": {
     "@types/google-apps-script": "^2.0.12",
-    "@gasboost/client": "workspace:*"
+    "@gasboost/client": "workspace:*",
+    "@gasboost/auth": "0.9.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -38,5 +39,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "peerDependencies": {
+    "@gasboost/auth": "^0.9.0"
   }
 }
