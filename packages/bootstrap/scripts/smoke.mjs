@@ -23,6 +23,8 @@ try {
       dependencies: {
         "@gasboost/app": `file:${join(root, app)}`,
         "@gasboost/bootstrap": `file:${join(root, bootstrap)}`,
+        "@gasboost/client": "^0.5.0",
+        "@gasboost/auth": "0.9.0",
       },
       devDependencies: {
         typescript: "^7.0.2",
@@ -36,23 +38,41 @@ try {
     `
 import { AppsScript, type InferAppsScript } from "@gasboost/app";
 import { AppsScriptBootstrap, type BootstrapPublicState } from "@gasboost/bootstrap";
+import { appsScriptClient } from "@gasboost/client";
+import type { AppsScriptAuthRepository } from "@gasboost/auth";
 
+const authRepository: AppsScriptAuthRepository = {
+  user: { async find(_id) { return null; }, async create(user) { return user; } },
+  account: { async findByIdentity(_provider, _email) { return null; } },
+  passwordCredential: { async findByResetTokenHash(_hash) { return null; }, async save(_credential) {} },
+};
 const bootstrap = new AppsScriptBootstrap({
+  authRepository,
   db: { migrate() {} },
-  auth: { registration: {
-    methods: { emailPassword: false, appsScript: true },
-    async ensure(input) { return { id: input.id }; },
-  } },
+  auth: {
+    registration: {
+      methods: { emailPassword: false, appsScript: true },
+      async appsScript(input) { return { id: "generated", accounts: [] }; },
+      async email(input) { return { id: "generated", accounts: [] }; },
+    },
+    account: {
+      async add(userId, input) { return { userId, identity: { providerName: input.provider, accountId: input.email } }; },
+    },
+  },
   authorization: { role: { async assign(_id: string, _role: "管理者") {} } },
 });
-const app = new AppsScript().get((_request, context) => {
-  const state: BootstrapPublicState = context.state.get(bootstrap.KEY);
+const app = new AppsScript().get(request => {
+  const state: BootstrapPublicState = bootstrap.handle(request);
   void state;
   return {} as GoogleAppsScript.HTML.HtmlOutput;
-}, [bootstrap.middleware()]).calls(bootstrap.handlers());
+}).calls(bootstrap.handlers());
 type API = InferAppsScript<typeof app>;
-const input: API["initializeApp"]["input"] = { token: "000001" };
-void input;
+const input: API["initializeApp"]["input"] = { token: "from-email" };
+if (false) {
+  const { client } = appsScriptClient<API>();
+  const result: Promise<BootstrapPublicState> = client.initializeApp(input);
+  void result;
+}
 if (typeof AppsScriptBootstrap !== "function") throw new Error("Bootstrap export is not loadable");
 `,
   );

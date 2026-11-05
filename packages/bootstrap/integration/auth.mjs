@@ -1,35 +1,26 @@
-// Run after building both workspaces:
-// GASBOOST_AUTH_WORKSPACE=/path/to/auth pnpm --filter @gasboost/bootstrap test:integration
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
 import { test } from "node:test";
 import { AppsScriptBootstrap } from "../dist/index.js";
+import { AppsScript, AppsScriptHttpRequest } from "@gasboost/app";
+import { appsScriptClient } from "@gasboost/client";
 
-const workspace = process.env.GASBOOST_AUTH_WORKSPACE;
-if (!workspace)
-  throw new Error(
-    "Set GASBOOST_AUTH_WORKSPACE to the built gasboost/auth checkout (auth#49 or later)",
-  );
-const requireCore = createRequire(
-  resolve(workspace, "packages/auth-core/package.json"),
-);
-const requireAdapter = createRequire(
-  resolve(workspace, "packages/auth-sheetorm/package.json"),
-);
+const requirePublished = createRequire(import.meta.url);
 const {
   AppsScriptAuth,
   AppsScriptAuthorization,
   createAuthTables,
   createAuthorizationTables,
-} = requireCore("./dist/index.js");
-const { AuthorizationPolicy } = requireCore("./dist/authorization/index.js");
+} = requirePublished("@gasboost/auth");
+const { AuthorizationPolicy } = requirePublished(
+  "@gasboost/auth/authorization",
+);
 const { SheetOrmAuthRepository, SheetOrmAuthorizationRepository } =
-  requireAdapter("./dist/index.js");
-const { SheetDB, SheetTable } = requireAdapter("@gasboost/sheetorm");
-const { NodeUtilities } = requireCore("@gasboost/fake-node");
-const { NodeLockService } = requireAdapter("@gasboost/fake-node");
-const { InMemoryCacheService } = requireCore("@gasboost/fake-core");
+  requirePublished("@gasboost/auth-sheetorm");
+const { SheetDB, SheetTable } = requirePublished("@gasboost/sheetorm");
+const { NodeUtilities } = requirePublished("@gasboost/fake-node");
+const { NodeLockService } = requirePublished("@gasboost/fake-node");
+const { InMemoryCacheService } = requirePublished("@gasboost/fake-core");
 
 // Real Auth and DB APIs, in-memory sheet gateway; no Google services or mail are contacted.
 class Gateway {
@@ -145,6 +136,7 @@ for (const [emailPassword, appsScript] of [
       lockService,
     });
     let raw = null;
+    let failRegistrationCheckpoint = true;
     const propertiesService = {
       getScriptProperties: () => ({
         getProperty: () => {
@@ -153,18 +145,38 @@ for (const [emailPassword, appsScript] of [
         },
         setProperty: (_key, value) => {
           assertNativeLock(true);
+          if (
+            failRegistrationCheckpoint &&
+            JSON.parse(value).progress?.registered
+          ) {
+            failRegistrationCheckpoint = false;
+            throw new Error("registration checkpoint interrupted");
+          }
           raw = value;
         },
       }),
     };
+    let activeEmail = "admin@example.com";
     const session = {
-      getActiveUser: () => ({ getEmail: () => "admin@example.com" }),
+      getActiveUser: () => ({ getEmail: () => activeEmail }),
+      getEffectiveUser: () => ({ getEmail: () => "admin@example.com" }),
     };
+    const setupMessages = [];
     Object.assign(globalThis, {
       Utilities: utilities,
       PropertiesService: propertiesService,
       Session: session,
-      ScriptApp: { getScriptId: () => "integration" },
+      ScriptApp: {
+        getService: () => ({
+          getUrl: () => "https://script.google.com/macros/s/integration/exec",
+        }),
+      },
+      MailApp: {
+        sendEmail: (message) => {
+          assertNativeLock(false);
+          setupMessages.push(message);
+        },
+      },
       LockService: lockService,
     });
     const repository = new SheetOrmAuthRepository({
@@ -206,6 +218,7 @@ for (const [emailPassword, appsScript] of [
     const options = {
       db,
       auth,
+      authRepository: repository,
       authorization,
       afterInitialize: () => assertExclusive("hook"),
     };
@@ -234,10 +247,28 @@ for (const [emailPassword, appsScript] of [
       await assertExclusive("migrate");
       migrate();
     };
-    const ensure = auth.registration.ensure.bind(auth.registration);
-    auth.registration.ensure = async (input) => {
-      await assertExclusive("ensure");
-      return ensure(input);
+    let registrationCalls = 0;
+    const interruptRegistration = (user) => {
+      registrationCalls++;
+      throw new Error("registration write interrupted");
+    };
+    const register = auth.registration.appsScript.bind(auth.registration);
+    auth.registration.appsScript = async (input) => {
+      await assertExclusive("register");
+      return interruptRegistration(await register(input));
+    };
+    const registerEmail = auth.registration.email.bind(auth.registration);
+    auth.registration.email = async (input) => {
+      await assertExclusive("register");
+      return interruptRegistration(await registerEmail(input));
+    };
+    let accountCalls = 0;
+    const addAccount = auth.account.add.bind(auth.account);
+    auth.account.add = async (...args) => {
+      const account = await addAccount(...args);
+      accountCalls++;
+      if (accountCalls === 1) throw new Error("account write interrupted");
+      return account;
     };
     const assign = authorization.role.assign.bind(authorization.role);
     authorization.role.assign = async (...args) => {
@@ -245,42 +276,90 @@ for (const [emailPassword, appsScript] of [
       return assign(...args);
     };
     const bootstrap = new AppsScriptBootstrap(options);
-    let state;
-    bootstrap.middleware()(
-      {
-        state: {
-          set: (_key, value) => {
-            state = value;
-          },
-        },
-      },
-      () => {},
-    );
-    assert.deepEqual(state, {
-      initialized: false,
-      settingsUrl:
-        "https://script.google.com/home/projects/integration/settings",
+    const app = new AppsScript()
+      .get((request) => {
+        const state = bootstrap.handle(request);
+        assert.deepEqual(state, { initialized: false });
+        return {};
+      })
+      .calls(bootstrap.handlers());
+    const request = new AppsScriptHttpRequest({
+      parameter: {},
+      parameters: {},
     });
-    const input = { token: JSON.parse(raw).bootstrap.token };
+    assert.deepEqual(bootstrap.handle(request), { initialized: false });
+    assert.equal(setupMessages.length, 1);
+    const input = {
+      token: new URL(setupMessages[0].body.split("\n")[1]).searchParams.get(
+        "token",
+      ),
+    };
+    assert.equal(input.token, JSON.parse(raw).bootstrap.token);
+    assert.deepEqual(
+      bootstrap.handle(
+        new AppsScriptHttpRequest({
+          parameter: { token: input.token },
+          parameters: {},
+        }),
+      ),
+      { initialized: false },
+    );
+    assert.equal(setupMessages.length, 1);
+    const { client } = appsScriptClient({
+      transport: {
+        call: (name, input, metadata) => app.dispatch(name, input, metadata),
+      },
+    });
+    for (const invalidActive of ["", "visitor@example.com"]) {
+      activeEmail = invalidActive;
+      await assert.rejects(
+        client.initializeApp(input),
+        /Active and effective users/,
+      );
+      assert.equal(gateway.records.size, 0);
+      assert.deepEqual(observedStages, []);
+    }
+    activeEmail = "admin@example.com";
+    await assert.rejects(
+      client.initializeApp(input),
+      /registration write interrupted/,
+    );
+    const registeredId = db.table("user").find()[0].id;
+    assert.equal(JSON.parse(raw).progress.administrator.id, undefined);
+    assert.equal(db.table("user").find().length, 1);
+    assert.ok(registeredId);
+    if (emailPassword && appsScript) {
+      await assert.rejects(
+        client.initializeApp(input),
+        /account write interrupted/,
+      );
+    }
+    await assert.rejects(
+      client.initializeApp(input),
+      /registration checkpoint interrupted/,
+    );
+    assert.equal(registrationCalls, 1);
+    assert.equal(accountCalls, emailPassword && appsScript ? 1 : 0);
     if (emailPassword) {
       await assert.rejects(
-        bootstrap.handlers().initializeApp(input),
+        client.initializeApp(input),
         /notification interrupted/,
       );
       assert.equal(JSON.parse(raw).initialized, false);
     }
-    await bootstrap.handlers().initializeApp(input);
+    await client.initializeApp(input);
     assert.deepEqual(JSON.parse(raw), { initialized: true });
     await Promise.all(probes);
     assert.ok(probes.length > 0);
     assert.ok(observedStages.includes("migrate"));
-    assert.ok(observedStages.includes("ensure"));
+    assert.ok(observedStages.includes("register"));
     assert.ok(observedStages.includes("assign"));
     assert.ok(observedStages.includes("hook"));
     if (emailPassword) assert.ok(observedStages.includes("notify"));
     gateway.onWrite = () => {};
     const users = db.table("user").find();
     assert.equal(users.length, 1);
+    assert.equal(users[0].id, registeredId);
     assert.equal(
       db.table("account").find().length,
       emailPassword && appsScript ? 2 : 1,
@@ -319,6 +398,7 @@ for (const [emailPassword, appsScript] of [
       "Session",
       "ScriptApp",
       "LockService",
+      "MailApp",
     ])
       delete globalThis[name];
   });

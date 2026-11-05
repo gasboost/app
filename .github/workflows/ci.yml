@@ -47,26 +47,17 @@ jobs:
       - name: Build bootstrap
         run: pnpm --filter @gasboost/bootstrap build
 
-      - name: Checkout Auth bootstrap dependency
-        uses: actions/checkout@v4
-        with:
-          repository: gasboost/auth
-          # auth#49: pin the API used by the integration test, including recovery fixes.
-          ref: 9b15a42587fe15c5f7c3fc97112df3ffd88272b4
-          path: .bootstrap-auth
-          persist-credentials: false
+      - name: Install published Auth integration dependencies
+        working-directory: packages/bootstrap/integration
+        run: npm install --ignore-scripts --no-audit --package-lock=false
 
-      - name: Build Auth bootstrap dependency
-        working-directory: .bootstrap-auth
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm --filter @gasboost/auth build
-          pnpm --filter @gasboost/auth-sheetorm build
+      - name: Build client
+        run: pnpm --filter @gasboost/client build
 
       - name: Integration test bootstrap with Auth and SheetORM
-        env:
-          GASBOOST_AUTH_WORKSPACE: ${{ github.workspace }}/.bootstrap-auth
-        run: pnpm --filter @gasboost/bootstrap test:integration
+        run: |
+          pnpm --filter @gasboost/bootstrap exec tsc -p integration/tsconfig.json
+          pnpm --filter @gasboost/bootstrap test:integration
 
       - name: Pack bootstrap
         run: pnpm --filter @gasboost/bootstrap pack
@@ -76,9 +67,6 @@ jobs:
 
       - name: Test client
         run: pnpm --filter @gasboost/client test
-
-      - name: Build client
-        run: pnpm --filter @gasboost/client build
 
       - name: Typecheck bridge
         run: pnpm --filter @gasboost/bridge typecheck
@@ -136,6 +124,11 @@ jobs:
           } from "@gasboost/app";
 
           const app = new AppsScript()
+            .get((request) => {
+              const path: string | undefined = request.path();
+              const token: string | undefined = request.query("token");
+              return HtmlService.createHtmlOutput(JSON.stringify({ path, token }));
+            })
             .call(
               "sum",
               (input: { a: number; b: number }) =>

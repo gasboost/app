@@ -1,22 +1,40 @@
+import type { AppsScriptAuthRepository } from "@gasboost/auth";
+
 /** Safe to embed in HTML. Secrets and recovery data never appear here. */
 export type BootstrapPublicState = {
   initialized: boolean;
-  settingsUrl?: string;
 };
 
-/** Structural subset of @gasboost/auth >=0.8.0; no runtime Auth import. */
+export type BootstrapAccount = {
+  userId: string;
+  identity: { providerName: string; accountId: string };
+};
+export type BootstrapUser = {
+  id: string;
+  accounts: readonly BootstrapAccount[];
+};
+
+/** Public server management APIs. */
 export interface BootstrapAuth {
   registration: {
     readonly methods: {
       readonly emailPassword: boolean;
       readonly appsScript: boolean;
     };
-    ensure(input: {
-      id: string;
+    email(input: {
       name: string;
       email: string;
-      password?: string;
-    }): Promise<{ id: string }>;
+      password: string;
+    }): Promise<BootstrapUser>;
+    appsScript(input: { name: string; email: string }): Promise<BootstrapUser>;
+  };
+  account: {
+    add(
+      userId: string,
+      input:
+        | { provider: "appsScript"; email: string }
+        | { provider: "emailPassword"; email: string; password: string },
+    ): Promise<BootstrapAccount>;
   };
   password?: { forgot(input: { email: string }): Promise<void> };
 }
@@ -31,17 +49,19 @@ export type BootstrapContext = Readonly<BootstrapAdministrator>;
 export type BootstrapOptions = {
   db: { migrate(): void | Promise<void> };
   auth: BootstrapAuth;
+  /** The same repository instance used to construct auth. */
+  authRepository: AppsScriptAuthRepository;
   authorization: {
     role: { assign(userId: string, role: string): Promise<void> };
   };
   administrator?: { name?: string; role?: string };
-  tokenDigits?: number;
   tokenTtlMinutes?: number;
   maxAttempts?: number;
   /** Replacements must be idempotent: a process may stop after an external write. */
   overrides?: {
-    migrate?(context: BootstrapContext): void | Promise<void>;
-    registerAdministrator?(context: BootstrapContext): Promise<{ id: string }>;
+    migrate?(
+      context: Readonly<Omit<BootstrapAdministrator, "id"> & { id?: string }>,
+    ): void | Promise<void>;
     assignRole?(context: BootstrapContext): Promise<void>;
     notify?(context: BootstrapContext): Promise<void>;
   };
@@ -51,11 +71,22 @@ export type BootstrapOptions = {
 
 export type AppState = {
   initialized: boolean;
-  bootstrap?: { token: string; expiresAt: number; attempts: number };
+  bootstrap?: {
+    token: string;
+    expiresAt: number;
+    attempts: number;
+    email?: string;
+    notified?: boolean;
+    retryAt?: number;
+  };
   /** Exclusive execution reservation; mutated only while holding ScriptLock. */
-  lease?: { id: string; expiresAt: number };
+  lease?: {
+    id: string;
+    expiresAt: number;
+    kind?: "notification" | "initialization";
+  };
   progress?: {
-    administrator: BootstrapAdministrator;
+    administrator: Omit<BootstrapAdministrator, "id"> & { id?: string };
     methods: { emailPassword: boolean; appsScript: boolean };
     migrated?: boolean;
     registered?: boolean;

@@ -1,0 +1,11 @@
+{
+  "name": "gasboost-bootstrap-integration",
+  "private": true,
+  "dependencies": {
+    "@gasboost/auth": "0.9.0",
+    "@gasboost/auth-sheetorm": "0.4.1",
+    "@gasboost/sheetorm": "4.0.0",
+    "@gasboost/fake-node": "0.3.0",
+    "@gasboost/fake-core": "0.4.0"
+  }
+}
