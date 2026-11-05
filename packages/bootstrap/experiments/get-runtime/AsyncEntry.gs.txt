@@ -1,5 +1,0 @@
-// Replace Code.gs with this file's contents for the second experiment.
-async function doGet(e) {
-  await Promise.resolve();
-  return HtmlService.createHtmlOutput("ASYNC_ENTRY_ISSUE_66_OK");
-}

@@ -3,19 +3,49 @@ export type BootstrapPublicState = {
   initialized: boolean;
 };
 
-/** Structural subset of @gasboost/auth >=0.9.0; no runtime Auth import. */
+export type BootstrapAccount = {
+  userId: string;
+  identity: { providerName: string; accountId: string };
+};
+export type BootstrapUser = {
+  id: string;
+  accounts: readonly BootstrapAccount[];
+};
+
+/** Public server management APIs. */
 export interface BootstrapAuth {
   registration: {
     readonly methods: {
       readonly emailPassword: boolean;
       readonly appsScript: boolean;
     };
-    ensureEffectiveUser(input: {
+    email(input: {
       id: string;
       name: string;
       email: string;
-      password?: string;
-    }): Promise<{ id: string }>;
+      password: string;
+    }): Promise<BootstrapUser>;
+    appsScript(input: {
+      id: string;
+      name: string;
+      email: string;
+    }): Promise<BootstrapUser>;
+  };
+  user: {
+    find(id: string): Promise<BootstrapUser | null>;
+    create(input: { id: string; name: string }): Promise<BootstrapUser>;
+  };
+  account: {
+    findByIdentity(
+      provider: "appsScript" | "emailPassword",
+      email: string,
+    ): Promise<BootstrapAccount | null>;
+    add(
+      userId: string,
+      input:
+        | { provider: "appsScript"; email: string }
+        | { provider: "emailPassword"; email: string; password: string },
+    ): Promise<BootstrapAccount>;
   };
   password?: { forgot(input: { email: string }): Promise<void> };
 }

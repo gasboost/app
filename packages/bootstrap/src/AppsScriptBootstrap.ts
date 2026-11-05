@@ -1,5 +1,11 @@
 import type { AppsScriptHttpRequest } from "@gasboost/app";
-import type { AppState, BootstrapOptions, BootstrapPublicState } from "./types";
+import type {
+  AppState,
+  BootstrapOptions,
+  BootstrapPublicState,
+  BootstrapAdministrator,
+  BootstrapAccount,
+} from "./types";
 
 type BootstrapStep =
   "migrated" | "registered" | "roleAssigned" | "notified" | "hookCompleted";
@@ -144,12 +150,7 @@ export class AppsScriptBootstrap {
       await this.step(leaseId, "registered", async () => {
         const user = this.options.overrides?.registerAdministrator
           ? await this.options.overrides.registerAdministrator(administrator)
-          : await this.options.auth.registration.ensureEffectiveUser({
-              ...administrator,
-              ...(methods.emailPassword
-                ? { password: Utilities.getUuid() + Utilities.getUuid() }
-                : {}),
-            });
+          : await this.register(administrator, methods);
         if (user.id !== administrator.id)
           throw new Error("Registration must preserve the bootstrap user ID");
       });
@@ -192,6 +193,11 @@ export class AppsScriptBootstrap {
       }
       const email = this.effectiveEmail();
       this.verify(state, input?.token, email);
+      const activeEmail = Session.getActiveUser().getEmail();
+      if (!activeEmail.trim() || activeEmail !== email)
+        throw new Error(
+          "Active and effective users must both be present and match",
+        );
       const methods = this.options.auth.registration.methods;
       if (!methods.emailPassword && !methods.appsScript)
         throw new Error("No authentication method is enabled");
@@ -244,6 +250,83 @@ export class AppsScriptBootstrap {
     });
   }
 
+  private async register(
+    administrator: BootstrapAdministrator,
+    methods: { emailPassword: boolean; appsScript: boolean },
+  ): Promise<{ id: string }> {
+    const { auth } = this.options;
+    const { id, name, email } = administrator;
+    const primary = methods.appsScript ? "appsScript" : "emailPassword";
+    const password = () => Utilities.getUuid() + Utilities.getUuid();
+    const check = (account: BootstrapAccount, provider: string) => {
+      if (
+        account.userId !== id ||
+        account.identity.providerName !== provider ||
+        account.identity.accountId !== email
+      ) {
+        throw new Error(
+          "Account does not belong to the fixed administrator identity",
+        );
+      }
+    };
+    let user = await auth.user.find(id);
+    if (!user) {
+      const orphan = await auth.account.findByIdentity(primary, email);
+      if (orphan) {
+        check(orphan, primary);
+        // Repair a missing User row only for an Account belonging to our pre-recorded ID.
+        await auth.user.create({ id, name });
+        user = await auth.user.find(id);
+        if (!user) throw new Error("User recovery was not persisted");
+      } else {
+        user = methods.appsScript
+          ? await auth.registration.appsScript({ id, name, email })
+          : await auth.registration.email({
+              id,
+              name,
+              email,
+              password: password(),
+            });
+      }
+    }
+    if (user.id !== id)
+      throw new Error("Registration must preserve the bootstrap user ID");
+    for (const provider of ["appsScript", "emailPassword"] as const) {
+      if (!methods[provider]) continue;
+      const account = user.accounts.find(
+        (account) => account.identity.providerName === provider,
+      );
+      if (account) {
+        check(account, provider);
+        continue;
+      }
+      const existing = await auth.account.findByIdentity(provider, email);
+      if (existing) {
+        check(existing, provider);
+        const refreshed = await auth.user.find(id);
+        if (
+          !refreshed?.accounts.some(
+            (account) =>
+              account.identity.providerName === provider &&
+              account.identity.accountId === email &&
+              account.userId === id,
+          )
+        ) {
+          throw new Error("Account recovery is inconsistent");
+        }
+        user = refreshed;
+        continue;
+      }
+      await auth.account.add(
+        id,
+        provider === "emailPassword"
+          ? { provider, email, password: password() }
+          : { provider, email },
+      );
+    }
+    return { id };
+  }
+
   private async step(
     leaseId: string,
     step: BootstrapStep,
@@ -292,8 +375,8 @@ export class AppsScriptBootstrap {
   }
 
   private effectiveEmail(): string {
-    const email = Session.getEffectiveUser().getEmail().trim();
-    if (!email) throw new Error("Effective user email is unavailable");
+    const email = Session.getEffectiveUser().getEmail();
+    if (!email.trim()) throw new Error("Effective user email is unavailable");
     return email;
   }
 
@@ -333,7 +416,7 @@ export class AppsScriptBootstrap {
       PropertiesService.getScriptProperties().getProperty("APP_STATE");
     if (raw === null) return { initialized: false };
     const state: AppState = JSON.parse(raw);
-    // Fail closed instead of replacing corrupt state and provisioning another administrator.
+    // Fail closed instead of replacing corrupt state and creating another administrator.
     if (!state || typeof state.initialized !== "boolean")
       throw new Error("Invalid APP_STATE");
     if (

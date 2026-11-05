@@ -9,25 +9,23 @@ import { AppsScript, AppsScriptHttpRequest } from "@gasboost/app";
 import { appsScriptClient } from "@gasboost/client";
 
 const workspace = process.env.GASBOOST_AUTH_WORKSPACE;
-if (!workspace)
-  throw new Error(
-    "Set GASBOOST_AUTH_WORKSPACE to the built gasboost/auth checkout (auth#49 or later)",
-  );
-const requireCore = createRequire(
-  resolve(workspace, "packages/auth-core/package.json"),
-);
-const requireAdapter = createRequire(
-  resolve(workspace, "packages/auth-sheetorm/package.json"),
-);
+const requireCore = workspace
+  ? createRequire(resolve(workspace, "packages/auth-core/package.json"))
+  : createRequire(import.meta.url);
+const requireAdapter = workspace
+  ? createRequire(resolve(workspace, "packages/auth-sheetorm/package.json"))
+  : createRequire(import.meta.url);
 const {
   AppsScriptAuth,
   AppsScriptAuthorization,
   createAuthTables,
   createAuthorizationTables,
-} = requireCore("./dist/index.js");
-const { AuthorizationPolicy } = requireCore("./dist/authorization/index.js");
+} = requireCore(workspace ? "./dist/index.js" : "@gasboost/auth");
+const { AuthorizationPolicy } = requireCore(
+  workspace ? "./dist/authorization/index.js" : "@gasboost/auth/authorization",
+);
 const { SheetOrmAuthRepository, SheetOrmAuthorizationRepository } =
-  requireAdapter("./dist/index.js");
+  requireAdapter(workspace ? "./dist/index.js" : "@gasboost/auth-sheetorm");
 const { SheetDB, SheetTable } = requireAdapter("@gasboost/sheetorm");
 const { NodeUtilities } = requireCore("@gasboost/fake-node");
 const { NodeLockService } = requireAdapter("@gasboost/fake-node");
@@ -147,6 +145,7 @@ for (const [emailPassword, appsScript] of [
       lockService,
     });
     let raw = null;
+    let failRegistrationCheckpoint = true;
     const propertiesService = {
       getScriptProperties: () => ({
         getProperty: () => {
@@ -155,12 +154,20 @@ for (const [emailPassword, appsScript] of [
         },
         setProperty: (_key, value) => {
           assertNativeLock(true);
+          if (
+            failRegistrationCheckpoint &&
+            JSON.parse(value).progress?.registered
+          ) {
+            failRegistrationCheckpoint = false;
+            throw new Error("registration checkpoint interrupted");
+          }
           raw = value;
         },
       }),
     };
+    let activeEmail = "admin@example.com";
     const session = {
-      getActiveUser: () => ({ getEmail: () => "" }),
+      getActiveUser: () => ({ getEmail: () => activeEmail }),
       getEffectiveUser: () => ({ getEmail: () => "admin@example.com" }),
     };
     const setupMessages = [];
@@ -248,12 +255,28 @@ for (const [emailPassword, appsScript] of [
       await assertExclusive("migrate");
       migrate();
     };
-    const ensure = auth.registration.ensureEffectiveUser.bind(
-      auth.registration,
-    );
-    auth.registration.ensureEffectiveUser = async (input) => {
-      await assertExclusive("ensure");
-      return ensure(input);
+    let registrationCalls = 0;
+    const interruptRegistration = (user) => {
+      registrationCalls++;
+      throw new Error("registration write interrupted");
+    };
+    const register = auth.registration.appsScript.bind(auth.registration);
+    auth.registration.appsScript = async (input) => {
+      await assertExclusive("register");
+      return interruptRegistration(await register(input));
+    };
+    const registerEmail = auth.registration.email.bind(auth.registration);
+    auth.registration.email = async (input) => {
+      await assertExclusive("register");
+      return interruptRegistration(await registerEmail(input));
+    };
+    let accountCalls = 0;
+    const addAccount = auth.account.add.bind(auth.account);
+    auth.account.add = async (...args) => {
+      const account = await addAccount(...args);
+      accountCalls++;
+      if (accountCalls === 1) throw new Error("account write interrupted");
+      return account;
     };
     const assign = authorization.role.assign.bind(authorization.role);
     authorization.role.assign = async (...args) => {
@@ -295,6 +318,35 @@ for (const [emailPassword, appsScript] of [
         call: (name, input, metadata) => app.dispatch(name, input, metadata),
       },
     });
+    for (const invalidActive of ["", "visitor@example.com"]) {
+      activeEmail = invalidActive;
+      await assert.rejects(
+        client.initializeApp(input),
+        /Active and effective users/,
+      );
+      assert.equal(gateway.records.size, 0);
+      assert.deepEqual(observedStages, []);
+    }
+    activeEmail = "admin@example.com";
+    await assert.rejects(
+      client.initializeApp(input),
+      /registration write interrupted/,
+    );
+    const fixedId = JSON.parse(raw).progress.administrator.id;
+    assert.equal(db.table("user").find().length, 1);
+    assert.equal(db.table("user").find()[0].id, fixedId);
+    if (emailPassword && appsScript) {
+      await assert.rejects(
+        client.initializeApp(input),
+        /account write interrupted/,
+      );
+    }
+    await assert.rejects(
+      client.initializeApp(input),
+      /registration checkpoint interrupted/,
+    );
+    assert.equal(registrationCalls, 1);
+    assert.equal(accountCalls, emailPassword && appsScript ? 1 : 0);
     if (emailPassword) {
       await assert.rejects(
         client.initializeApp(input),
@@ -307,7 +359,7 @@ for (const [emailPassword, appsScript] of [
     await Promise.all(probes);
     assert.ok(probes.length > 0);
     assert.ok(observedStages.includes("migrate"));
-    assert.ok(observedStages.includes("ensure"));
+    assert.ok(observedStages.includes("register"));
     assert.ok(observedStages.includes("assign"));
     assert.ok(observedStages.includes("hook"));
     if (emailPassword) assert.ok(observedStages.includes("notify"));

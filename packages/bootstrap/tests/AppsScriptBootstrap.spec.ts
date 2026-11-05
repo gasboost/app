@@ -39,17 +39,15 @@ function fixture(overrides: Partial<BootstrapOptions> = {}) {
     getUuid: vi.fn(
       () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`,
     ),
-    DigestAlgorithm: { SHA_256: "SHA_256" },
-    Charset: { UTF_8: "UTF_8" },
-    computeDigest: vi.fn(() => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -6]),
   };
-  const activeUser = { getEmail: vi.fn(() => "admin@example.com") };
+  const effectiveUser = { getEmail: vi.fn(() => "admin@example.com") };
   vi.stubGlobal("PropertiesService", { getScriptProperties: () => properties });
   vi.stubGlobal("LockService", { getScriptLock: () => lock });
   vi.stubGlobal("Utilities", utilities);
+  const activeUser = { getEmail: vi.fn(() => "admin@example.com") };
   vi.stubGlobal("Session", {
-    getEffectiveUser: () => activeUser,
-    getActiveUser: () => ({ getEmail: () => "" }),
+    getEffectiveUser: () => effectiveUser,
+    getActiveUser: () => activeUser,
   });
   const getUrl = vi.fn(
     () => "https://script.google.com/macros/s/deployment-id/exec",
@@ -67,13 +65,72 @@ function fixture(overrides: Partial<BootstrapOptions> = {}) {
       order.push("migrate");
     }),
   };
+  const users = new Map<
+    string,
+    {
+      id: string;
+      accounts: {
+        userId: string;
+        identity: { providerName: string; accountId: string };
+      }[];
+    }
+  >();
+  const accounts: {
+    userId: string;
+    identity: { providerName: string; accountId: string };
+  }[] = [];
+  const makeAccount = (userId: string, provider: string, email: string) => ({
+    userId,
+    identity: { providerName: provider, accountId: email },
+  });
+  const registration = (provider: string) =>
+    vi.fn(async (input: { id: string; email: string }) => {
+      order.push("register");
+      if (users.has(input.id)) throw new Error("User already exists");
+      const account = makeAccount(input.id, provider, input.email);
+      accounts.push(account);
+      const user = { id: input.id, accounts: [account] };
+      users.set(input.id, user);
+      return user;
+    });
   const auth = {
     registration: {
       methods: { emailPassword: true, appsScript: true },
-      ensureEffectiveUser: vi.fn(async (input: { id: string }) => {
-        order.push("register");
-        return { id: input.id };
+      appsScript: registration("appsScript"),
+      email: registration("emailPassword"),
+    },
+    user: {
+      find: vi.fn(async (id: string) => {
+        const user = users.get(id);
+        return user
+          ? {
+              ...user,
+              accounts: accounts.filter((account) => account.userId === id),
+            }
+          : null;
       }),
+      create: vi.fn(async (input: { id: string; name: string }) => {
+        const user = { id: input.id, accounts: [] };
+        users.set(input.id, user);
+        return user;
+      }),
+    },
+    account: {
+      findByIdentity: vi.fn(
+        async (provider: string, email: string) =>
+          accounts.find(
+            (account) =>
+              account.identity.providerName === provider &&
+              account.identity.accountId === email,
+          ) ?? null,
+      ),
+      add: vi.fn(
+        async (id: string, input: { provider: string; email: string }) => {
+          const account = makeAccount(id, input.provider, input.email);
+          accounts.push(account);
+          return account;
+        },
+      ),
     },
     password: {
       forgot: vi.fn(async () => {
@@ -123,9 +180,12 @@ function fixture(overrides: Partial<BootstrapOptions> = {}) {
     options,
     authorization,
     order,
-    activeUser,
+    effectiveUser,
     properties,
     lock,
+    activeUser,
+    users,
+    accounts,
     utilities,
     mail,
     getUrl,
@@ -167,7 +227,7 @@ describe("synchronous GET state and setup notification", () => {
       expect(f.get()).toEqual({ initialized: false });
     expect(f.mail.sendEmail).toHaveBeenCalledOnce();
     expect(f.db.migrate).not.toHaveBeenCalled();
-    expect(f.auth.registration.ensureEffectiveUser).not.toHaveBeenCalled();
+    expect(f.auth.registration.appsScript).not.toHaveBeenCalled();
   });
   it("rejects a duplicate notification request while the first is sending", () => {
     const f = fixture();
@@ -212,7 +272,7 @@ describe("synchronous GET state and setup notification", () => {
     const f = fixture();
     f.setState({ initialized: true });
     expect(f.get("anything")).toEqual({ initialized: true });
-    expect(f.activeUser.getEmail).not.toHaveBeenCalled();
+    expect(f.effectiveUser.getEmail).not.toHaveBeenCalled();
     expect(f.getUrl).not.toHaveBeenCalled();
     expect(f.properties.setProperty).not.toHaveBeenCalled();
     expect(f.mail.sendEmail).not.toHaveBeenCalled();
@@ -221,7 +281,7 @@ describe("synchronous GET state and setup notification", () => {
     const f = fixture();
     f.get();
     const previous = f.state();
-    f.activeUser.getEmail.mockReturnValue("other@example.com");
+    f.effectiveUser.getEmail.mockReturnValue("other@example.com");
     expect(() => f.get()).toThrow("original effective user");
     expect(f.state()).toEqual(previous);
     expect(f.mail.sendEmail).toHaveBeenCalledOnce();
@@ -234,7 +294,7 @@ describe("synchronous GET state and setup notification", () => {
     expect(f.db.migrate).not.toHaveBeenCalled();
     expect(() => f.get("invalid")).toThrow("Invalid bootstrap token");
     expect(f.mail.sendEmail).toHaveBeenCalledOnce();
-    expect(f.auth.registration.ensureEffectiveUser).not.toHaveBeenCalled();
+    expect(f.auth.registration.appsScript).not.toHaveBeenCalled();
   });
   it("reissues a legacy v0.1 challenge without resetting existing progress", () => {
     const f = fixture();
@@ -297,10 +357,10 @@ describe("RPC authorization", () => {
     f.get();
     await expect(f.initialize()).resolves.toEqual({ initialized: true });
   });
-  it("rejects empty active email without using the effective user", async () => {
+  it("rejects an empty EffectiveUser before initialization", async () => {
     const f = fixture();
     f.get();
-    f.activeUser.getEmail.mockReturnValue("");
+    f.effectiveUser.getEmail.mockReturnValue("");
     await expect(f.initialize()).rejects.toThrow("Effective user email");
     expect(f.db.migrate).not.toHaveBeenCalled();
   });
@@ -328,7 +388,7 @@ describe("RPC authorization", () => {
   });
 });
 
-describe("provisioning and recovery", () => {
+describe("registration and recovery", () => {
   it.each([
     [true, false],
     [false, true],
@@ -345,7 +405,9 @@ describe("provisioning and recovery", () => {
           ? ["migrate", "register", "role", "notify"]
           : ["migrate", "register", "role"],
       );
-      const input = f.auth.registration.ensureEffectiveUser.mock.calls[0][0];
+      const input = (
+        appsScript ? f.auth.registration.appsScript : f.auth.registration.email
+      ).mock.calls[0][0];
       expect(f.authorization.role.assign).toHaveBeenCalledExactlyOnceWith(
         input.id,
         "管理者",
@@ -378,24 +440,25 @@ describe("provisioning and recovery", () => {
     f.get();
     await f.initialize();
     expect(f.db.migrate).toHaveBeenCalledOnce();
-    expect(f.auth.registration.ensureEffectiveUser).toHaveBeenCalledOnce();
+    expect(f.auth.registration.appsScript).toHaveBeenCalledOnce();
     expect(f.authorization.role.assign).toHaveBeenCalledOnce();
     expect(f.auth.password.forgot).toHaveBeenCalledTimes(2);
   });
-  it("retains the same administrator ID when registration writes then throws", async () => {
+  it("recovers a registration write that threw before returning", async () => {
     const f = fixture();
     f.get();
-    f.auth.registration.ensureEffectiveUser.mockRejectedValueOnce(
-      new Error("interrupted"),
-    );
-    await expect(f.initialize()).rejects.toThrow("interrupted");
+    const register = f.auth.registration.appsScript.getMockImplementation()!;
+    f.auth.registration.appsScript.mockImplementationOnce(async (input) => {
+      await register(input);
+      throw new Error("interrupted after write");
+    });
+    await expect(f.initialize()).rejects.toThrow("interrupted after write");
     const id = f.state().progress!.administrator.id;
     await f.initialize();
-    expect(
-      f.auth.registration.ensureEffectiveUser.mock.calls.map(
-        ([input]) => input.id,
-      ),
-    ).toEqual([id, id]);
+    expect(f.auth.registration.appsScript).toHaveBeenCalledOnce();
+    expect(f.users.size).toBe(1);
+    expect(f.users.has(id)).toBe(true);
+    expect(f.accounts).toHaveLength(2);
     expect(f.db.migrate).toHaveBeenCalledOnce();
   });
   it("repairs a lost checkpoint after an external write using the same stable ID", async () => {
@@ -415,10 +478,8 @@ describe("provisioning and recovery", () => {
     expect(f.state().progress?.registered).toBeUndefined();
     await f.initialize();
     expect(
-      f.auth.registration.ensureEffectiveUser.mock.calls.map(
-        ([input]) => input.id,
-      ),
-    ).toEqual([id, id]);
+      f.auth.registration.appsScript.mock.calls.map(([input]) => input.id),
+    ).toEqual([id]);
     expect(f.state().initialized).toBe(true);
   });
   it("rejects a different recovery user and changed provider configuration", async () => {
@@ -428,9 +489,9 @@ describe("provisioning and recovery", () => {
       throw new Error("migration failed");
     });
     await expect(f.initialize()).rejects.toThrow("migration failed");
-    f.activeUser.getEmail.mockReturnValue("other@example.com");
+    f.effectiveUser.getEmail.mockReturnValue("other@example.com");
     await expect(f.initialize()).rejects.toThrow("original effective user");
-    f.activeUser.getEmail.mockReturnValue("admin@example.com");
+    f.effectiveUser.getEmail.mockReturnValue("admin@example.com");
     f.auth.registration.methods.appsScript = false;
     await expect(f.initialize()).rejects.toThrow(
       "original authentication configuration",
@@ -470,7 +531,7 @@ describe("provisioning and recovery", () => {
     expect(f.state().lease).toEqual(lease);
     finish();
     await first;
-    expect(f.auth.registration.ensureEffectiveUser).toHaveBeenCalledOnce();
+    expect(f.auth.registration.appsScript).toHaveBeenCalledOnce();
     expect(f.state()).toEqual({ initialized: true });
   });
   it("does not renew tokens or resend mail during an active initialization lease", async () => {
@@ -517,7 +578,7 @@ describe("provisioning and recovery", () => {
     vi.advanceTimersByTime(4 * 60_000);
     await f.initialize();
     expect(f.db.migrate).not.toHaveBeenCalled();
-    expect(f.auth.registration.ensureEffectiveUser).toHaveBeenCalledWith(
+    expect(f.auth.registration.appsScript).toHaveBeenCalledWith(
       expect.objectContaining({ id: "original-admin" }),
     );
     expect(f.state()).toEqual({ initialized: true });
@@ -550,10 +611,10 @@ describe("provisioning and recovery", () => {
     await expect(first).rejects.toThrow("lease was lost or expired");
     expect(f.state().lease).toEqual(successor);
     expect(f.state().progress?.migrated).toBeUndefined();
-    expect(f.auth.registration.ensureEffectiveUser).not.toHaveBeenCalled();
+    expect(f.auth.registration.appsScript).not.toHaveBeenCalled();
     secondFinish();
     await second;
-    expect(f.auth.registration.ensureEffectiveUser).toHaveBeenCalledOnce();
+    expect(f.auth.registration.appsScript).toHaveBeenCalledOnce();
     expect(f.state()).toEqual({ initialized: true });
   });
   it("refuses to checkpoint after lease expiry even without a successor", async () => {
@@ -566,7 +627,7 @@ describe("provisioning and recovery", () => {
     expect(f.state().initialized).toBe(false);
     expect(f.state().progress?.migrated).toBeUndefined();
     expect(f.state().lease).toBeUndefined();
-    expect(f.auth.registration.ensureEffectiveUser).not.toHaveBeenCalled();
+    expect(f.auth.registration.appsScript).not.toHaveBeenCalled();
     await f.initialize();
     expect(f.state().initialized).toBe(true);
   });
@@ -582,7 +643,7 @@ describe("provisioning and recovery", () => {
     expect(notify).toHaveBeenCalledOnce();
     expect(hook).toHaveBeenCalledTimes(2);
     expect(f.auth.password.forgot).not.toHaveBeenCalled();
-    expect(f.auth.registration.ensureEffectiveUser).toHaveBeenCalledOnce();
+    expect(f.auth.registration.appsScript).toHaveBeenCalledOnce();
     expect(Object.isFrozen(hook.mock.calls[0][0])).toBe(true);
   });
 });
@@ -632,7 +693,7 @@ describe("rejected input never reaches initialization side effects", () => {
       if (reason === "expired") state.bootstrap!.expiresAt = Date.now();
       if (reason === "locked") state.bootstrap!.attempts = 5;
       if (reason === "owner")
-        f.activeUser.getEmail.mockReturnValue("visitor@example.com");
+        f.effectiveUser.getEmail.mockReturnValue("visitor@example.com");
       if (reason === "lease")
         state.lease = {
           id: "notification",
@@ -647,7 +708,7 @@ describe("rejected input never reaches initialization side effects", () => {
       await expect(f.initialize(token)).rejects.toThrow();
       for (const fn of [
         f.db.migrate,
-        f.auth.registration.ensureEffectiveUser,
+        f.auth.registration.appsScript,
         f.authorization.role.assign,
         f.auth.password.forgot,
         ...Object.values(hooks),
@@ -668,7 +729,7 @@ describe("rejected input never reaches initialization side effects", () => {
       if (reason === "bad" || reason === "") token = reason;
       if (reason === "expired") state.bootstrap!.expiresAt = Date.now();
       if (reason === "owner")
-        f.activeUser.getEmail.mockReturnValue("other@example.com");
+        f.effectiveUser.getEmail.mockReturnValue("other@example.com");
       if (reason === "locked") state.bootstrap!.attempts = 5;
       if (reason === "missing") delete state.bootstrap;
       f.setState(state);
@@ -676,7 +737,7 @@ describe("rejected input never reaches initialization side effects", () => {
       expect(() => f.get(token)).toThrow();
       for (const fn of [
         f.db.migrate,
-        f.auth.registration.ensureEffectiveUser,
+        f.auth.registration.appsScript,
         f.authorization.role.assign,
         f.auth.password.forgot,
         afterInitialize,
@@ -719,8 +780,97 @@ it("ignores a supplied recipient and rejects empty EffectiveUser before notifyin
   } as unknown as GoogleAppsScript.Events.DoGet);
   expect(f.mail.sendEmail.mock.calls[0][0].to).toBe("admin@example.com");
   const g = fixture();
-  g.activeUser.getEmail.mockReturnValue("");
+  g.effectiveUser.getEmail.mockReturnValue("");
   expect(() => g.get()).toThrow("Effective user email");
   expect(g.mail.sendEmail).not.toHaveBeenCalled();
   expect(g.properties.setProperty).not.toHaveBeenCalled();
+});
+
+it.each(["", "visitor@example.com", " admin@example.com"])(
+  "rejects ActiveUser %s before all initialization calls",
+  async (active) => {
+    const hook = vi.fn(async () => {});
+    const f = fixture({ afterInitialize: hook });
+    f.get();
+    f.activeUser.getEmail.mockReturnValue(active);
+    await expect(f.initialize()).rejects.toThrow("Active and effective users");
+    for (const fn of [
+      f.db.migrate,
+      f.auth.user.find,
+      f.auth.user.create,
+      f.auth.registration.email,
+      f.auth.registration.appsScript,
+      f.auth.account.add,
+      f.auth.account.findByIdentity,
+      f.authorization.role.assign,
+      f.auth.password.forgot,
+      hook,
+    ])
+      expect(fn).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["user-only", "orphan", "foreign"])(
+  "recovers persisted rows safely: %s",
+  async (partial) => {
+    const f = fixture();
+    f.get();
+    f.setState({
+      ...f.state(),
+      progress: {
+        administrator: {
+          id: "stable",
+          name: "Admin",
+          email: "admin@example.com",
+          role: "管理者",
+        },
+        methods: { appsScript: true, emailPassword: true },
+        migrated: true,
+      },
+    });
+    if (partial === "user-only")
+      f.users.set("stable", { id: "stable", accounts: [] });
+    else
+      f.accounts.push({
+        userId: partial === "foreign" ? "another-user" : "stable",
+        identity: {
+          providerName: "appsScript",
+          accountId: "admin@example.com",
+        },
+      });
+    if (partial === "foreign") {
+      await expect(f.initialize()).rejects.toThrow(
+        "fixed administrator identity",
+      );
+      expect(f.auth.user.create).not.toHaveBeenCalled();
+      expect(f.auth.account.add).not.toHaveBeenCalled();
+      expect(f.authorization.role.assign).not.toHaveBeenCalled();
+    } else {
+      await f.initialize();
+      expect(f.users.size).toBe(1);
+      expect(f.accounts).toHaveLength(2);
+      expect(f.auth.registration.appsScript).not.toHaveBeenCalled();
+      expect(f.auth.registration.email).not.toHaveBeenCalled();
+      expect(f.authorization.role.assign).toHaveBeenCalledExactlyOnceWith(
+        "stable",
+        "管理者",
+      );
+    }
+  },
+);
+
+it("does not add a second Account twice after an interrupted Account write", async () => {
+  const f = fixture();
+  f.get();
+  const add = f.auth.account.add.getMockImplementation()!;
+  f.auth.account.add.mockImplementationOnce(async (id, input) => {
+    await add(id, input);
+    throw new Error("account write interrupted");
+  });
+  await expect(f.initialize()).rejects.toThrow("account write interrupted");
+  await f.initialize();
+  expect(f.auth.registration.appsScript).toHaveBeenCalledOnce();
+  expect(f.auth.account.add).toHaveBeenCalledOnce();
+  expect(f.users.size).toBe(1);
+  expect(f.accounts).toHaveLength(2);
 });

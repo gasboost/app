@@ -106,9 +106,9 @@ jobs:
       - name: Verify bootstrap Auth release
         if: ${{ needs.check-versions.outputs.publish-bootstrap == 'true' }}
         run: |
-          npm view '@gasboost/auth@0.9.0' version
-          npm view '@gasboost/auth-sheetorm@0.4.1' version
-          npm view '@gasboost/auth-app@0.6.2' version
+          npm view '@gasboost/auth@0.10.0' version
+          npm view '@gasboost/auth-sheetorm@0.4.2' version
+          npm view '@gasboost/auth-app@0.6.3' version
 
       - name: Typecheck bootstrap
         if: ${{ needs.check-versions.outputs.publish-bootstrap == 'true' }}

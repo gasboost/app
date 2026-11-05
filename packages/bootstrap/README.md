@@ -8,14 +8,13 @@ HTML・テンプレート変数・タイトル・UIはConsumerが生成します
 
 ```sh
 pnpm add @gasboost/app@^5.4.0 @gasboost/bootstrap@^0.2.0 @gasboost/client@^0.5.0
-pnpm add @gasboost/auth@^0.9.0 @gasboost/auth-sheetorm@^0.4.1 @gasboost/auth-app@^0.6.2
+pnpm add @gasboost/auth@^0.10.0 @gasboost/auth-sheetorm@^0.4.2 @gasboost/auth-app@^0.6.3
 ```
 
-標準登録は [gasboost/auth#50](https://github.com/gasboost/auth/pull/50) の
-`registration.ensureEffectiveUser()` を必要とします。依存リリース後に利用してください。
-Auth / DB / Password Resetの非同期APIは変更せず使用します。
-Bootstrapは注入された公開APIの構造型に依存し、AuthやClientをruntime importしません。
-Clientは既存APIを使用するため、この変更によるversion bumpはありません。
+標準登録は固定User ID指定と汎用User / Account参照に対応するAuth 0.10.0以降を必要とします。
+Auth / DB / Password Resetは非同期の正規APIを使用します。
+Bootstrapは公開APIの構造型に依存し、AuthやClientをruntime importしません。
+Clientは既存APIを使用するためversion bumpはありません。
 
 ## Backend
 
@@ -67,7 +66,7 @@ HTMLテンプレートでは、上記でエスケープしたJSONだけをforce-
 
 公開状態は `BootstrapPublicState = { initialized: boolean }` だけです。
 トークン・メール・リース・試行回数・復旧情報はHTMLへ渡しません。
-`settingsUrl` は廃止しました。画面のmeta・favicon・title等はすべてConsumerが設定します。
+画面のmeta・favicon・title等はすべてConsumerが設定します。
 
 ## Frontendとメールリンク
 
@@ -124,12 +123,14 @@ RPCは公開入口として扱い、トークン・TTL・試行回数・未初�
 GAS OAuthスコープはDB等に必要なものに加え、MailApp送信用の
 `https://www.googleapis.com/auth/script.send_mail` と `userinfo.email` を設定します。
 初期化リンクのメールは `Session.getEffectiveUser().getEmail()` 宛てに固定です。
-空ならエラーにし、ActiveUserへ切り替えません。
+空ならエラーにします。RPCはさらにActiveUserの非空・EffectiveUserとの完全一致を必須にします。
+USER_DEPLOYINGでActiveUserが取得できない場合、tokenが正しくても初期化を拒否します。
+EffectiveUserで代用したり、USER_ACCESSINGへの変更や一般利用者へのSpreadsheet権限付与を求めたりしません。
 
 EffectiveUserはデプロイ実行者の識別であり、外部訪問者の本人確認ではありません。
-初期化権限はメールで受け取ったトークンの所持・照合で確認します。
+初期化権限はメールtokenの照合とRPCの主体チェックの両方で確認します。
 発行時とGET/RPC時のEffectiveUserが異なれば拒否します。
-Authの `ensureEffectiveUser()` も同じメールを独立して照合し、Sessionを偽装しません。
+Registrationは指定アドレスを登録するサーバー内部APIです。自己登録のSignUp RPCは呼びません。
 トークン入りURLを第三者へ共有・ログ出力したり、HTMLへ埋め込んだりしないでください。
 
 初期化URLは `ScriptApp.getService().getUrl()` の有効な `/exec` URLを使います。
@@ -140,7 +141,7 @@ Authの `ensureEffectiveUser()` も同じメールを独立して照合し、Ses
 
 状態はScript Propertiesの `APP_STATE` にJSONとして保存します。
 長いトークンは2つのGAS UUIDから生成し、既定TTLは30分、最大失敗回数は5回です。
-`tokenTtlMinutes` は1〜1440、`maxAttempts` は1〜100です。短い数値トークンの `tokenDigits` は廃止しました。
+`tokenTtlMinutes` は1〜1440、`maxAttempts` は1〜100です。
 失敗上限後は期限まで正しいtokenも拒否します。期限後の通常GETでだけ再発行します。
 
 通知と初期化は、それぞれScript Lock内で10分の実行リースを取得してから開始します。
@@ -179,23 +180,43 @@ Spreadsheet・Properties・メールは原子的なトランザクションで�
 各処理の引数は読み取り専用の `{ id, email, name, role }` で、登録は同じ `id` を返す必要があります。
 カスタム処理もトークン検証とリース取得より後にだけ実行され、再実行可能にしてください。
 
-## 0.1.0からの移行と検証
+## 登録と復旧に使用する汎用API
 
-`middleware()` / `KEY` / `settingsUrl` とScript Properties手入力を標準手順から外し、
-同期GETで `handle(request)`、ログイン認証の登録前に `.calls(bootstrap.handlers())` を使用します。
-`initializeApp` のRPCは引き続き存在します。フロントはメールURLのtokenを読み、型付きClientで呼びます。
-旧形式のチャレンジは通常GETで新しいメールリンクへ置き換えます。管理者ID・進捗は維持し、
-旧ActiveUserと新EffectiveUserが違う場合は自動的に付け替えず拒否します。
-初期化済み状態はそのまま利用できます。復旧のために `APP_STATE` 全体を削除しないでください。
+RPC入口でtoken・TTL・試行回数・通知状態・発行先・リースと
+ActiveUser / EffectiveUserの非空・一致を確認した後にだけ、次を実行します。
 
-GASの非同期GETを実機検証した記録は `experiments/get-runtime/` に残しています。
-この制約を避けるためにGETとRPCを分離しており、Auth / DBを同期化する必要はありません。
+1. DB migration。
+2. `auth.user.find(fixedId)` で既存Userを再取得。存在しなければ
+   `registration.appsScript({ id: fixedId, name, email })`、またはEmailのみの場合
+   `registration.email({ id: fixedId, name, email, password })` で最初のAccountとUserを新規登録。
+3. 両方式が有効なら、同じUserに `auth.account.add(user.id, { provider: "emailPassword", email, password })`。
+4. `authorization.role.assign()`、Email有効時の `auth.password.forgot()`、完了hook、完了状態保存。
 
-`pnpm typecheck` / `pnpm test` / `pnpm build` に加え、次で実Auth・SheetORM・型付きClientを接続します。
+固定IDはDB操作より前にプロパティへ保存します。登録保存後・進捗保存前の停止では
+同じIDを `auth.user.find()` で再取得し、保存済みのAccountを再作成せず不足分だけ追加します。
+User行だけ保存された場合も `account.add()` で修復します。
+User行が失われた孤立Accountの場合は `account.findByIdentity()` で固定IDへの帰属を確認し、
+汎用 `auth.user.create({ id, name })` で空Userを復旧してから再取得します。
+メール一致だけで別Userを採用せず、ID・provider・emailの矛盾はRole付与前に拒否します。
+登録・Account追加が成功直後に例外や停止になった場合も、保存済み認証情報を維持します。
+
+## 検証と依存リリース
+
+CIは `integration/package.json` の公開済みレジストリ版をインストールし、
+実Auth型とのConsumer型チェックと結合テストを実行します。未マージソースのcheckoutは行いません。
+必要版が公開されていなければCI / publishを通さず、Draftのまま待機します。
+App 5.4.0を先に公開し、その後Bootstrap 0.2.0を公開します。
 
 ```sh
-GASBOOST_AUTH_WORKSPACE=/path/to/built/auth pnpm --filter @gasboost/bootstrap test:integration
+npm --prefix packages/bootstrap/integration install --ignore-scripts --no-audit --package-lock=false
+pnpm --filter @gasboost/bootstrap exec tsc -p integration/tsconfig.json
+pnpm --filter @gasboost/bootstrap test:integration
 ```
 
-CIはAuthのAPIコミットを固定し、Bootstrap / SheetDBで同一NodeLockServiceを共有して検証します。
-App / Bootstrapをルートでpackした後、`pnpm --filter @gasboost/bootstrap smoke` で別Consumerの型を確認できます。
+ローカルの依存API候補を評価する場合のみ `GASBOOST_AUTH_WORKSPACE=/path/to/built/auth` を指定できます。
+その結果を公開済み版での検証成功とは扱いません。CIはこの上書きを使用しません。
+
+`pnpm typecheck` / `pnpm test` / `pnpm build` で型と単体を検証します。
+結合テストではBootstrapとSheetDBで同じNodeLockServiceを共有し、認証3パターンと
+不正主体の拒否、登録後・Account追加後・進捗保存時の中断を通じて、1 User / 必要Account / 1 Roleを確認します。
+App / Bootstrapをpackした後は `pnpm --filter @gasboost/bootstrap smoke` で配布Consumerを確認できます。

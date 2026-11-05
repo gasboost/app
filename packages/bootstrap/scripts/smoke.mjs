@@ -41,10 +41,18 @@ import { appsScriptClient } from "@gasboost/client";
 
 const bootstrap = new AppsScriptBootstrap({
   db: { migrate() {} },
-  auth: { registration: {
-    methods: { emailPassword: false, appsScript: true },
-    async ensureEffectiveUser(input) { return { id: input.id }; },
-  } },
+  auth: {
+    registration: {
+      methods: { emailPassword: false, appsScript: true },
+      async appsScript(input) { return { id: input.id, accounts: [] }; },
+      async email(input) { return { id: input.id, accounts: [] }; },
+    },
+    user: { async find(_id) { return null; }, async create(input) { return { id: input.id, accounts: [] }; } },
+    account: {
+      async findByIdentity(_provider, _email) { return null; },
+      async add(userId, input) { return { userId, identity: { providerName: input.provider, accountId: input.email } }; },
+    },
+  },
   authorization: { role: { async assign(_id: string, _role: "管理者") {} } },
 });
 const app = new AppsScript().get(request => {
