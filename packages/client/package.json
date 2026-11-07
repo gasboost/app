@@ -1,6 +1,6 @@
 {
   "name": "@gasboost/client",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Type-safe Google Apps Script RPC client with jobs and navigation.",
   "repository": {
     "type": "git",
@@ -19,7 +19,8 @@
   ],
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

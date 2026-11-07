@@ -127,7 +127,7 @@ describe("AppsScript middleware integration", () => {
       const app = new AppsScript().use((_context, next) => next());
 
       await expect(app.dispatch("missing", {})).rejects.toThrow(
-        "Function missing is not registered.",
+        "An unexpected error occurred",
       );
     });
 

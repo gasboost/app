@@ -172,7 +172,7 @@ describe("AppsScriptBridge", () => {
           id: "3",
           token: "token",
           ok: false,
-          error: expect.objectContaining({ message: "server failure" }),
+          error: expect.objectContaining({ message: "An unexpected error occurred" }),
         }),
         "https://parent.example",
       );

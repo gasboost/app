@@ -18,3 +18,5 @@ export type {
   MetadataProvider,
   RpcCallOptions,
 } from "./RpcMetadata";
+
+export { AppsScriptRpcError } from "./AppsScriptRpcError";

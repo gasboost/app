@@ -386,7 +386,7 @@ describe("RPC authorization", () => {
     const app = f.app.use(authentication).call("private", () => "secret");
     await app.dispatch("initializeApp", { token: f.state().bootstrap!.token });
     expect(authentication).not.toHaveBeenCalled();
-    await expect(app.dispatch("private")).rejects.toThrow("Login required");
+    await expect(app.dispatch("private")).rejects.toThrow("An unexpected error occurred");
   });
 });
 

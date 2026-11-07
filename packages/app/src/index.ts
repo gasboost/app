@@ -15,3 +15,5 @@ export { AppsScriptState, type StateMap } from "./AppsScriptState";
 export type { RpcMetadata } from "./RpcMetadata";
 
 export { AppsScriptHttpRequest } from "./AppsScriptHttpRequest";
+
+export { AppsScriptError } from "./AppsScriptError";

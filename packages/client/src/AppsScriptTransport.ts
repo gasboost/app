@@ -1,3 +1,4 @@
+import { restoreRpcError } from "./AppsScriptRpcError";
 import type { RpcMetadata } from "./RpcMetadata";
 import { google } from "./google";
 import type { RpcResponse, Transport } from "./Transport";
@@ -8,7 +9,7 @@ export class AppsScriptTransport implements Transport {
     input?: unknown,
     metadata?: RpcMetadata,
   ): Promise<RpcResponse> {
-    return new Promise((resolve, reject) => {
+    return new Promise<RpcResponse>((resolve, reject) => {
       const runner = google.script.run
         .withSuccessHandler(resolve)
         .withFailureHandler(reject);
@@ -26,6 +27,8 @@ export class AppsScriptTransport implements Transport {
       }
 
       runner[name](input);
+    }).catch((cause: unknown) => {
+      throw restoreRpcError(cause);
     });
   }
 }

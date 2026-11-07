@@ -310,11 +310,16 @@ for (const [emailPassword, appsScript] of [
         call: (name, input, metadata) => app.dispatch(name, input, metadata),
       },
     });
+    const internalRpcError = {
+      name: "Error",
+      message: 'GASBOOST_RPC_ERROR_V1:{"code":"INTERNAL_ERROR","message":"An unexpected error occurred"}',
+      stack: undefined,
+    };
     for (const invalidActive of ["", "visitor@example.com"]) {
       activeEmail = invalidActive;
       await assert.rejects(
         client.initializeApp(input),
-        /Active and effective users/,
+        internalRpcError,
       );
       assert.equal(gateway.records.size, 0);
       assert.deepEqual(observedStages, []);
@@ -322,7 +327,7 @@ for (const [emailPassword, appsScript] of [
     activeEmail = "admin@example.com";
     await assert.rejects(
       client.initializeApp(input),
-      /registration write interrupted/,
+      internalRpcError,
     );
     const registeredId = db.table("user").find()[0].id;
     assert.equal(JSON.parse(raw).progress.administrator.id, undefined);
@@ -331,19 +336,19 @@ for (const [emailPassword, appsScript] of [
     if (emailPassword && appsScript) {
       await assert.rejects(
         client.initializeApp(input),
-        /account write interrupted/,
+        internalRpcError,
       );
     }
     await assert.rejects(
       client.initializeApp(input),
-      /registration checkpoint interrupted/,
+      internalRpcError,
     );
     assert.equal(registrationCalls, 1);
     assert.equal(accountCalls, emailPassword && appsScript ? 1 : 0);
     if (emailPassword) {
       await assert.rejects(
         client.initializeApp(input),
-        /notification interrupted/,
+        internalRpcError,
       );
       assert.equal(JSON.parse(raw).initialized, false);
     }
