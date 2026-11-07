@@ -39,6 +39,7 @@ describe("createAuthContext", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expectTypeOf(result.current.user).toEqualTypeOf<{ name: string } | null>();
     expectTypeOf(result.current.session).toEqualTypeOf<Session | null>();
+    expectTypeOf(result.current.isSessionRestoreFailed).toEqualTypeOf<boolean>();
     expectTypeOf(result.current.signIn).parameter(0).toEqualTypeOf<Credentials>();
     expectTypeOf(result.current.signUp).parameter(0).toEqualTypeOf<Registration>();
     expectTypeOf(result.current.signIn).returns.toEqualTypeOf<Promise<Session>>();
@@ -86,6 +87,7 @@ describe("createAuthContext", () => {
       ),
     });
     expect(result.current.isLoading).toBe(true);
+    expect(result.current.isSessionRestoreFailed).toBe(false);
     expect(context.remote.getSession).toHaveBeenCalledTimes(1);
     expect(context.remote.getSession).toHaveBeenCalledWith("saved");
     await act(async () => pending.resolve(session));
@@ -95,16 +97,161 @@ describe("createAuthContext", () => {
 
   it("exposes restoration errors without an unhandled rejection and allows retry", async () => {
     const context = setup();
+    const first = mount(context);
+    await waitFor(() => expect(first.result.current.isLoading).toBe(false));
+    await act(() => first.result.current.signIn(credentials));
+    first.unmount();
     const error = new Error("offline");
-    context.storage.set("saved");
     context.remote.getSession = vi.fn(async () => { throw error; });
     const { result } = mount(context);
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.error).toBe(error);
+    expect(result.current.isSessionRestoreFailed).toBe(true);
+    expect(result.current.session).toBe(session);
+    expect(result.current.user).toBe(session.user);
+    expect(result.current.token).toBe(session.token);
+    expect(context.storage.get()).toBe(session.token);
     context.remote.getSession = vi.fn(async () => session);
     await act(() => result.current.restoreSession());
     expect(result.current.error).toBeNull();
+    expect(result.current.isSessionRestoreFailed).toBe(false);
     expect(result.current.session).toBe(session);
+  });
+
+  it("marks explicit restore failures and clears them on a normal null response", async () => {
+    const context = setup();
+    const { result } = mount(context);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(() => result.current.signIn(credentials));
+    const error = new Error("offline");
+    context.remote.getSession = vi.fn(async () => { throw error; });
+    await act(async () => {
+      await expect(result.current.restoreSession()).rejects.toBe(error);
+    });
+    expect(result.current.isSessionRestoreFailed).toBe(true);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.user).toBe(session.user);
+    expect(context.storage.get()).toBe(session.token);
+    context.remote.getSession = vi.fn(async () => null);
+    await act(() => result.current.restoreSession());
+    expect(result.current.isSessionRestoreFailed).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(result.current.user).toBeNull();
+    expect(context.storage.get()).toBeNull();
+  });
+
+  it("does not treat an invalid session during initial restore as a failure", async () => {
+    const context = setup();
+    context.storage.set("expired");
+    context.remote.getSession = vi.fn(async () => null);
+    const { result } = mount(context);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isSessionRestoreFailed).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(result.current.session).toBeNull();
+    expect(context.storage.get()).toBeNull();
+  });
+
+  it.each(["signIn", "signUp", "signOut"] as const)(
+    "%s failures preserve the restore flag, and success clears it",
+    async (action) => {
+      const context = setup();
+      const { result } = mount(context);
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      await act(() => result.current.signIn(credentials));
+      const error = new Error(`${action} failed`);
+      const failed = vi.spyOn(context.remote, action).mockRejectedValue(error);
+      const perform = () => action === "signUp"
+        ? result.current.signUp({ ...credentials, name: "Taro" })
+        : action === "signIn" ? result.current.signIn(credentials) : result.current.signOut();
+      await act(async () => { await expect(perform()).rejects.toBe(error); });
+      expect(result.current.error).toBe(error);
+      expect(result.current.isSessionRestoreFailed).toBe(false);
+
+      context.remote.getSession = vi.fn(async () => { throw new Error("offline"); });
+      await act(async () => { await expect(result.current.restoreSession()).rejects.toThrow("offline"); });
+      expect(result.current.isSessionRestoreFailed).toBe(true);
+      await act(async () => { await expect(perform()).rejects.toBe(error); });
+      expect(result.current.isSessionRestoreFailed).toBe(true);
+      failed.mockRestore();
+      await act(async () => { await perform(); });
+      expect(result.current.isSessionRestoreFailed).toBe(false);
+      expect(result.current.isLoading).toBe(false);
+    },
+  );
+
+  it.each((["initial", "explicit"] as const).flatMap((kind) =>
+    (["signIn", "signUp", "signOut", "restoreSession"] as const).map((action) => [kind, action] as const),
+  ))(
+    "ignores a stale %s restore failure after newer %s succeeds",
+    async (kind, action) => {
+      const context = setup();
+      await context.auth.signIn(credentials);
+      const pending = deferred<Session | null>();
+      if (kind === "initial") context.remote.getSession = vi.fn(() => pending.promise);
+      const { result } = mount(context);
+      let restore: Promise<Session | null> | undefined;
+      if (kind === "explicit") {
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+        context.remote.getSession = vi.fn(() => pending.promise);
+        act(() => { restore = result.current.restoreSession(); });
+      }
+      await act(async () => {
+        if (action === "signIn") await result.current.signIn(credentials);
+        else if (action === "signUp") await result.current.signUp({ ...credentials, name: "Taro" });
+        else if (action === "signOut") await result.current.signOut();
+        else {
+          context.remote.getSession = vi.fn(async () => session);
+          await result.current.restoreSession();
+        }
+      });
+      expect(result.current.isLoading).toBe(true);
+      const error = new Error("stale restore failed");
+      await act(async () => {
+        pending.reject(error);
+        if (restore) await expect(restore).rejects.toBe(error);
+      });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.isSessionRestoreFailed).toBe(false);
+      expect(result.current.user).toBe(action === "signOut" ? null : session.user);
+      expect(context.storage.get()).toBe(action === "signOut" ? null : session.token);
+    },
+  );
+
+  it("keeps the latest restore result when overlapping retries finish out of order", async () => {
+    const context = setup();
+    const { result } = mount(context);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(() => result.current.signIn(credentials));
+    const older = deferred<Session | null>();
+    const newer = deferred<Session | null>();
+    context.remote.getSession = vi.fn()
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise);
+    let first!: Promise<Session | null>;
+    let second!: Promise<Session | null>;
+    act(() => {
+      first = result.current.restoreSession();
+      second = result.current.restoreSession();
+    });
+    await act(async () => { newer.reject(new Error("offline")); await expect(second).rejects.toThrow("offline"); });
+    expect(result.current.isSessionRestoreFailed).toBe(true);
+    await act(async () => { older.resolve(session); await first; });
+    expect(result.current.isSessionRestoreFailed).toBe(true);
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it("still reports a restore failure when overlapping sign-in also fails", async () => {
+    const context = setup();
+    context.storage.set("saved");
+    const pending = deferred<Session | null>();
+    context.remote.getSession = vi.fn(() => pending.promise);
+    context.remote.signIn = vi.fn(async () => { throw new Error("sign-in failed"); });
+    const { result } = mount(context);
+    await act(async () => { await expect(result.current.signIn(credentials)).rejects.toThrow("sign-in failed"); });
+    await act(async () => { pending.reject(new Error("offline")); });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isSessionRestoreFailed).toBe(true);
   });
 
   it("keeps loading while actions overlap and propagates action errors", async () => {
@@ -156,7 +303,7 @@ describe("createAuthContext", () => {
       signUpEmail: async (_input: Registration) => result,
       signInAppsScript: vi.fn(async (_input: Record<string, never>) => result),
       signUpAppsScript: async (_input: { name: string }) => result,
-      getSession: async (_input: { sessionId: string }) => ({ id: "session" }),
+      getSession: vi.fn(async (_input: { sessionId: string }) => ({ id: "session" })),
       signOut: async (_input: { sessionId: string }) => {},
     };
     const auth = appsScriptAuth({ client, storage: memoryAuthStorage() });
@@ -172,6 +319,13 @@ describe("createAuthContext", () => {
     expect(client.signInAppsScript).toHaveBeenCalledWith({});
     expect(hook.result.current.session).toBe(auth.getState().session);
     expect(hook.result.current.user).toBe(result.user);
+    client.getSession.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => {
+      await expect(hook.result.current.restoreSession()).rejects.toThrow("offline");
+    });
+    expect(hook.result.current.isSessionRestoreFailed).toBe(true);
+    await act(async () => { await hook.result.current.signInAppsScript(); });
+    expect(hook.result.current.isSessionRestoreFailed).toBe(false);
   });
 
   it("isolates contexts and rejects use outside the matching provider", async () => {

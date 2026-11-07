@@ -284,10 +284,18 @@ export function Root() {
 }
 
 function App() {
-  const { user, session, isAuthenticated, isLoading, error, signIn, signOut } = useAuth();
+  const { user, session, isAuthenticated, isLoading, isSessionRestoreFailed, error, restoreSession, signIn, signOut } = useAuth();
   const client = useAppsScript();
 
   if (isLoading) return <p>Loading...</p>;
+  if (isSessionRestoreFailed) {
+    return (
+      <>
+        <p>{String(error)}</p>
+        <button onClick={() => { void restoreSession().catch(() => {}); }}>Retry</button>
+      </>
+    );
+  }
   if (!isAuthenticated) {
     return (
       <>
@@ -314,11 +322,27 @@ function App() {
 
 - Provider は `useSyncExternalStore` で AuthClient の snapshot を購読し、unmount 時に購読を解除します。React の外で AuthClient を更新しても再描画されます。AuthClient 自体は unmount 後も利用できます。
 - mount 時は AuthClient の `restoreSession()` を呼びます。同じ context の同時 mount / StrictMode では進行中の初期復元を共有します。復元アルゴリズムは AuthClient が所有します。
-- `auth-client@0.2.0` の snapshot は session / user / token / isAuthenticated を持ちます。`isLoading` / `error` は React の表示用状態です。初期復元中、またはその Provider の Hook 経由の action が一つでも進行中なら `isLoading` は true です。action 開始時に error を消去し、失敗時に記録します。直接 `auth.signIn(...)` 等を呼ぶ場合の loading / error は呼び出し元で扱います。
+- `auth-client@0.2.0` の snapshot は session / user / token / isAuthenticated を持ちます。`isLoading` / `isSessionRestoreFailed` / `error` は React の表示用状態です。初期復元中、またはその Provider の Hook 経由の action が一つでも進行中なら `isLoading` は true です。復元失敗後も処理が終了すれば false に戻ります。action 開始時に error を消去し、失敗時に記録します。直接 `auth.signIn(...)` 等を呼ぶ場合の loading / error は呼び出し元で扱います。
+- `isSessionRestoreFailed` の初期値は false です。初回復元または Hook の `restoreSession()` が失敗すると true になり、保存済み token / User / Session は保持します。再試行中も成功するまでは true を維持し、復元成功（無効セッションの正常な null 応答を含む）や Hook の `signIn` / `signUp` / `signOut` 成功で false に戻ります。復元以外の操作の失敗では値を変更しません。古い復元結果は後続の復元や認証成功を上書きしません。
 - `signIn` / `signUp` / `signOut` / `restoreSession` に加え、AuthClient に追加された async action も同じ引数・戻り値で公開します。action の rejection は呼び出し元にも伝搬するため、イベントハンドラ等で catch してください。初期復元の rejection は Provider が受け取り `error` へ公開します。
 - `useAuth()` は対応する Provider の内側で使います。別々の `createAuthContext` で生成した context は独立しています。
 - 永続化と復元後の user の内容は AuthClient の仕様に従います。標準 Apps Script adapter の復元結果は `user: null` のため、必要な user 情報は application RPC で取得します。
 - SSR では request ごとの AuthClient と `memoryAuthStorage()`、または custom storage を用意してください。browser storage factory は browser 環境で生成します。
+
+### 保護ページの Guard
+
+復元失敗時には以前の User / 権限が残ることがあります。Consumer の認証・権限 Guard は、User を参照する前に `isLoading || isSessionRestoreFailed` を確認してください。エラー表示や `restoreSession()` による再試行は Consumer で実装できます。`error` は他の非同期操作でも更新される汎用エラーです。
+
+```tsx
+function AuthGuard({ children }: { children: React.ReactNode }) {
+  const { user, isLoading, isSessionRestoreFailed } = useAuth();
+  if (isLoading || isSessionRestoreFailed) return null;
+  if (!user) return <Navigate to={routes.user.login} replace />;
+  return <>{children}</>;
+}
+```
+
+この例の `useAuth` は Consumer の `lib/auth`、`Navigate` は Consumer の router、`routes` は Consumer のルート定義です。PermissionGuard も同じ条件の後に同期的な権限判定を行います。バックエンドでの実行時認可は引き続き必要です。
 
 ### 0.3.x からの移行
 
