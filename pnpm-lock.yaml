@@ -30,7 +30,7 @@ importers:
   packages/bootstrap:
     dependencies:
       '@gasboost/app':
-        specifier: workspace:^
+        specifier: workspace:^5.5.0
         version: link:../app
     devDependencies:
       '@gasboost/auth':

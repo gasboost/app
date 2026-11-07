@@ -1,4 +1,5 @@
-import type { AppsScriptHttpRequest } from "@gasboost/app";
+import { AppsScriptError, type AppsScriptHttpRequest } from "@gasboost/app";
+import { BOOTSTRAP_ERROR_CODES, BootstrapError } from "./errors";
 import type {
   AppState,
   BootstrapOptions,
@@ -91,7 +92,10 @@ export class AppsScriptBootstrap {
         };
       }
       if (state.bootstrap.attempts >= this.maxAttempts)
-        throw new Error("Bootstrap is locked until token expiry");
+        throw new BootstrapError({
+          code: BOOTSTRAP_ERROR_CODES.LOCKED,
+          message: "Bootstrap is locked until token expiry",
+        });
       // Persist retry spacing before the external send, including ambiguous send/checkpoint failures.
       state.bootstrap.retryAt = Date.now() + 60_000;
       const leaseId = Utilities.getUuid();
@@ -132,7 +136,21 @@ export class AppsScriptBootstrap {
 
   public handlers() {
     return {
-      initializeApp: (input: { token: string }) => this.initialize(input),
+      initializeApp: async (input: {
+        token: string;
+      }): Promise<BootstrapPublicState> => {
+        try {
+          return await this.initialize(input);
+        } catch (cause) {
+          if (cause instanceof BootstrapError) {
+            throw new AppsScriptError({
+              code: cause.code,
+              message: cause.message,
+            });
+          }
+          throw cause;
+        }
+      },
     };
   }
 
@@ -190,11 +208,16 @@ export class AppsScriptBootstrap {
     return this.withScriptLock(() => {
       const state = this.read();
       if (state.initialized)
-        throw new Error("Application is already initialized");
+        throw new BootstrapError({
+          code: BOOTSTRAP_ERROR_CODES.ALREADY_INITIALIZED,
+          message: "Application is already initialized",
+        });
       if (state.lease && state.lease.expiresAt > Date.now()) {
-        throw new Error(
-          "Bootstrap initialization is already in progress; retry later",
-        );
+        throw new BootstrapError({
+          code: BOOTSTRAP_ERROR_CODES.IN_PROGRESS,
+          message:
+            "Bootstrap initialization is already in progress; retry later",
+        });
       }
       const email = this.effectiveEmail();
       this.verify(state, input?.token, email);
@@ -371,22 +394,36 @@ export class AppsScriptBootstrap {
   private verify(state: AppState, token: unknown, email: string): void {
     const challenge = state.bootstrap;
     if (!challenge?.email)
-      throw new Error("Open the application to issue a bootstrap link");
+      throw new BootstrapError({
+        code: BOOTSTRAP_ERROR_CODES.INVALID_TOKEN,
+        message: "Open the application to issue a bootstrap link",
+      });
     if (challenge.expiresAt <= Date.now())
-      throw new Error("Bootstrap token has expired; reload the application");
+      throw new BootstrapError({
+        code: BOOTSTRAP_ERROR_CODES.TOKEN_EXPIRED,
+        message: "Bootstrap token has expired; reload the application",
+      });
     if (challenge.attempts >= this.maxAttempts)
-      throw new Error("Bootstrap is locked until token expiry");
+      throw new BootstrapError({
+        code: BOOTSTRAP_ERROR_CODES.LOCKED,
+        message: "Bootstrap is locked until token expiry",
+      });
     if (typeof token !== "string" || !this.equal(token, challenge.token)) {
       challenge.attempts += 1;
       this.write(state);
-      throw new Error("Invalid bootstrap token");
+      throw new BootstrapError({
+        code: BOOTSTRAP_ERROR_CODES.INVALID_TOKEN,
+        message: "Invalid bootstrap token",
+      });
     }
     if (challenge.email !== email)
       throw new Error("Bootstrap requires the original effective user");
     if (!challenge.notified)
-      throw new Error(
-        "Bootstrap link delivery is incomplete; open /exec without token to retry",
-      );
+      throw new BootstrapError({
+        code: BOOTSTRAP_ERROR_CODES.LINK_NOT_READY,
+        message:
+          "Bootstrap link delivery is incomplete; open /exec without token to retry",
+      });
   }
 
   private withScriptLock<T>(run: () => T): T {

@@ -8,7 +8,17 @@ import {
   vi,
   expectTypeOf,
 } from "vitest";
-import { AppsScript } from "@gasboost/app";
+import {
+  AppsScript,
+  AppsScriptError,
+  type InferAppsScript,
+} from "@gasboost/app";
+import {
+  appsScriptClient,
+  AppsScriptRpcError,
+  FetchTransport,
+} from "@gasboost/client";
+import { BOOTSTRAP_ERROR_CODES, BootstrapError } from "../src/errors";
 import {
   AppsScriptBootstrap,
   type BootstrapOptions,
@@ -386,7 +396,9 @@ describe("RPC authorization", () => {
     const app = f.app.use(authentication).call("private", () => "secret");
     await app.dispatch("initializeApp", { token: f.state().bootstrap!.token });
     expect(authentication).not.toHaveBeenCalled();
-    await expect(app.dispatch("private")).rejects.toThrow("An unexpected error occurred");
+    await expect(app.dispatch("private")).rejects.toThrow(
+      "An unexpected error occurred",
+    );
   });
 });
 
@@ -911,4 +923,169 @@ it("does not add a second Account twice after an interrupted Account write", asy
   expect(f.auth.account.add).toHaveBeenCalledOnce();
   expect(f.users.size).toBe(1);
   expect(f.accounts).toHaveLength(2);
+});
+
+describe("coded bootstrap errors", () => {
+  function rpc(f: ReturnType<typeof fixture>) {
+    const payloads: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, options: RequestInit) => {
+        const { input } = JSON.parse(options.body as string);
+        try {
+          return new Response(
+            (await f.app.dispatch("initializeApp", input)).contents,
+          );
+        } catch (cause) {
+          const error = cause as Error;
+          const payload = JSON.stringify({
+            error: {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            },
+          });
+          payloads.push(payload);
+          return new Response(payload, { status: 500 });
+        }
+      }),
+    );
+    const { client } = appsScriptClient<InferAppsScript<typeof f.app>>({
+      transport: new FetchTransport({ endpoint: "/rpc" }),
+    });
+    return { client, payloads };
+  }
+
+  it.each([
+    ["invalid", BOOTSTRAP_ERROR_CODES.INVALID_TOKEN],
+    ["missing", BOOTSTRAP_ERROR_CODES.INVALID_TOKEN],
+    ["expired", BOOTSTRAP_ERROR_CODES.TOKEN_EXPIRED],
+    ["locked", BOOTSTRAP_ERROR_CODES.LOCKED],
+    ["lease", BOOTSTRAP_ERROR_CODES.IN_PROGRESS],
+    ["initialized", BOOTSTRAP_ERROR_CODES.ALREADY_INITIALIZED],
+    ["undelivered", BOOTSTRAP_ERROR_CODES.LINK_NOT_READY],
+  ])(
+    "propagates a safe code and message for %s through RPC",
+    async (reason, code) => {
+      const f = fixture();
+      f.get();
+      const state = f.state();
+      const token = state.bootstrap!.token;
+      if (reason === "missing") delete state.bootstrap;
+      if (reason === "expired") state.bootstrap!.expiresAt = Date.now();
+      if (reason === "locked") state.bootstrap!.attempts = 5;
+      if (reason === "lease")
+        state.lease = {
+          id: "private-lease",
+          kind: "notification",
+          expiresAt: Date.now() + 60000,
+        };
+      if (reason === "initialized") state.initialized = true;
+      if (reason === "undelivered") state.bootstrap!.notified = false;
+      f.setState(state);
+      const { client, payloads } = rpc(f);
+      const error = await client
+        .initializeApp({
+          token: reason === "invalid" ? "invalid-secret-token" : token,
+        })
+        .catch((cause: unknown) => cause);
+      expect(error).toBeInstanceOf(AppsScriptRpcError);
+      expect(error).toMatchObject({ code, message: expect.any(String) });
+      expect((error as Error).message).not.toBe("An unexpected error occurred");
+      for (const secret of [
+        token,
+        "invalid-secret-token",
+        "admin@example.com",
+        "private-lease",
+        '"stack"',
+      ]) {
+        expect(payloads.join()).not.toContain(secret);
+      }
+      expect(f.db.migrate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("converts at the initialization handler boundary but keeps GET errors synchronous", async () => {
+    const f = fixture();
+    f.get();
+    const state = f.state();
+    expect(() => f.get("invalid")).toThrow(BootstrapError);
+    try {
+      f.get("invalid");
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: BOOTSTRAP_ERROR_CODES.INVALID_TOKEN,
+      });
+      expect(error).not.toBeInstanceOf(AppsScriptError);
+    }
+    await expect(f.initialize("invalid")).rejects.toBeInstanceOf(
+      AppsScriptError,
+    );
+    await expect(f.initialize("invalid")).rejects.toMatchObject({
+      code: BOOTSTRAP_ERROR_CODES.INVALID_TOKEN,
+      message: "Invalid bootstrap token",
+    });
+    expect(f.state().bootstrap!.attempts).toBe(state.bootstrap!.attempts + 4);
+    expect(f.get()).toEqual({ initialized: false });
+  });
+
+  it("keeps attempt limits, expiry, reissue and successful initialization over RPC", async () => {
+    const f = fixture({ maxAttempts: 2, tokenTtlMinutes: 1 });
+    f.get();
+    const token = f.state().bootstrap!.token;
+    const { client } = rpc(f);
+    for (let i = 0; i < 2; i++) {
+      await expect(
+        client.initializeApp({ token: "invalid" }),
+      ).rejects.toMatchObject({ code: BOOTSTRAP_ERROR_CODES.INVALID_TOKEN });
+    }
+    await expect(client.initializeApp({ token })).rejects.toMatchObject({
+      code: BOOTSTRAP_ERROR_CODES.LOCKED,
+    });
+    expect(f.state().bootstrap!.attempts).toBe(2);
+    vi.advanceTimersByTime(60000);
+    await expect(client.initializeApp({ token })).rejects.toMatchObject({
+      code: BOOTSTRAP_ERROR_CODES.TOKEN_EXPIRED,
+    });
+    f.get();
+    await expect(
+      client.initializeApp({ token: f.state().bootstrap!.token }),
+    ).resolves.toEqual({ initialized: true });
+    await expect(client.initializeApp({ token })).rejects.toMatchObject({
+      code: BOOTSTRAP_ERROR_CODES.ALREADY_INITIALIZED,
+    });
+    expect(f.state()).toEqual({ initialized: true });
+    expect(f.auth.registration.appsScript).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    new Error("internal database secret"),
+    { secret: "internal database secret" },
+  ])(
+    "passes unknown failures through to the common RPC boundary: %s",
+    async (cause) => {
+      const f = fixture();
+      f.get();
+      f.db.migrate.mockImplementation(() => {
+        throw cause;
+      });
+      await expect(f.initialize()).rejects.toBe(cause);
+      const { client, payloads } = rpc(f);
+      const error = await client
+        .initializeApp({ token: f.state().bootstrap!.token })
+        .catch((cause: unknown) => cause);
+      expect(error).toBeInstanceOf(AppsScriptRpcError);
+      expect(error).toMatchObject({
+        code: "INTERNAL_ERROR",
+        message: "An unexpected error occurred",
+      });
+      expect(payloads.join()).not.toContain("internal database secret");
+      expect(payloads.join()).not.toContain('"stack"');
+      expect(f.state().lease).toBeUndefined();
+      f.db.migrate.mockImplementation(() => {});
+      await expect(
+        client.initializeApp({ token: f.state().bootstrap!.token }),
+      ).resolves.toEqual({ initialized: true });
+    },
+  );
 });
