@@ -325,6 +325,7 @@ function App() {
 - `auth-client@0.2.0` の snapshot は session / user / token / isAuthenticated を持ちます。`isLoading` / `isSessionRestoreFailed` / `error` は React の表示用状態です。初期復元中、またはその Provider の Hook 経由の action が一つでも進行中なら `isLoading` は true です。復元失敗後も処理が終了すれば false に戻ります。action 開始時に error を消去し、失敗時に記録します。直接 `auth.signIn(...)` 等を呼ぶ場合の loading / error は呼び出し元で扱います。
 - `isSessionRestoreFailed` の初期値は false です。初回復元または Hook の `restoreSession()` が失敗すると true になり、保存済み token / User / Session は保持します。再試行中も成功するまでは true を維持し、復元成功（無効セッションの正常な null 応答を含む）や Hook の `signIn` / `signUp` / `signOut` 成功で false に戻ります。復元以外の操作の失敗では値を変更しません。古い復元結果は後続の復元や認証成功を上書きしません。
 - `signIn` / `signUp` / `signOut` / `restoreSession` に加え、AuthClient に追加された async action も同じ引数・戻り値で公開します。action の rejection は呼び出し元にも伝搬するため、イベントハンドラ等で catch してください。初期復元の rejection は Provider が受け取り `error` へ公開します。
+- 復元失敗フラグの解除は、AuthClient が認証状態の更新を通知した場合に限ります。後続の認証操作により古い操作の結果が破棄された場合、Promise が resolve しても解除しません。追加 action や React 外からの操作も、認証状態が実際に更新されれば解除します。
 - `useAuth()` は対応する Provider の内側で使います。別々の `createAuthContext` で生成した context は独立しています。
 - 永続化と復元後の user の内容は AuthClient の仕様に従います。標準 Apps Script adapter の復元結果は `user: null` のため、必要な user 情報は application RPC で取得します。
 - SSR では request ごとの AuthClient と `memoryAuthStorage()`、または custom storage を用意してください。browser storage factory は browser 環境で生成します。

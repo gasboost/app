@@ -254,6 +254,79 @@ describe("createAuthContext", () => {
     expect(result.current.isSessionRestoreFailed).toBe(true);
   });
 
+  it.each((["signIn", "signUp", "signOut"] as const).flatMap((action) =>
+    (["older-first", "newer-first"] as const).map((order) => [action, order] as const),
+  ))("keeps restore failure when superseded %s resolves (%s)", async (action, order) => {
+    const context = setup();
+    const { result } = mount(context);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(() => result.current.signIn(credentials));
+    const previous = context.auth.getState();
+    context.remote.getSession = vi.fn(async () => { throw new Error("offline"); });
+    await act(async () => { await expect(result.current.restoreSession()).rejects.toThrow("offline"); });
+    expect(result.current.isSessionRestoreFailed).toBe(true);
+
+    const older = deferred<Session>();
+    const newer = deferred<Session>();
+    const nextSession: Session = { ...session, token: "new-token", user: { name: "Jiro" } };
+    context.remote.signIn = vi.fn(() => newer.promise);
+    if (action === "signIn") vi.mocked(context.remote.signIn).mockReturnValueOnce(older.promise);
+    else if (action === "signUp") context.remote.signUp = () => older.promise;
+    else context.remote.signOut = async () => { await older.promise; };
+    let first!: Promise<unknown>;
+    let second!: Promise<Session>;
+    act(() => {
+      first = action === "signIn" ? result.current.signIn(credentials)
+        : action === "signUp" ? result.current.signUp({ ...credentials, name: "Jiro" })
+        : result.current.signOut();
+      second = result.current.signIn(credentials);
+    });
+    const resolveOlder = async () => { older.resolve(nextSession); await first; };
+    const rejectNewer = async () => {
+      newer.reject(new Error("new sign-in failed"));
+      await expect(second).rejects.toThrow("new sign-in failed");
+    };
+    await act(order === "older-first" ? resolveOlder : rejectNewer);
+    expect(result.current.isSessionRestoreFailed).toBe(true);
+    expect(result.current.isLoading).toBe(true);
+    await act(order === "older-first" ? rejectNewer : resolveOlder);
+    expect(result.current.isSessionRestoreFailed).toBe(true);
+    expect(result.current.isLoading).toBe(false);
+    expect(context.auth.getState()).toBe(previous);
+    expect(result.current.user).toBe(session.user);
+    expect(context.storage.get()).toBe(session.token);
+  });
+
+  it("does not clear a newer restore failure when a superseded login resolves after another commit", async () => {
+    const context = setup();
+    const { result } = mount(context);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const older = deferred<Session>();
+    context.remote.signIn = vi.fn(async () => session).mockReturnValueOnce(older.promise);
+    let first!: Promise<Session>;
+    act(() => { first = result.current.signIn(credentials); });
+    await act(() => result.current.signIn(credentials));
+    context.remote.getSession = vi.fn(async () => { throw new Error("offline"); });
+    await act(async () => { await expect(result.current.restoreSession()).rejects.toThrow("offline"); });
+    expect(result.current.isSessionRestoreFailed).toBe(true);
+    await act(async () => { older.resolve(session); await first; });
+    expect(result.current.isSessionRestoreFailed).toBe(true);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.user).toBe(session.user);
+  });
+
+  it("clears restore failure when authentication commits outside React", async () => {
+    const context = setup();
+    context.storage.set("saved");
+    context.remote.getSession = vi.fn(async () => { throw new Error("offline"); });
+    const { result } = mount(context);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isSessionRestoreFailed).toBe(true);
+    await act(() => context.auth.signIn(credentials));
+    expect(result.current.isSessionRestoreFailed).toBe(false);
+    expect(result.current.user).toBe(session.user);
+  });
+
   it("keeps loading while actions overlap and propagates action errors", async () => {
     const context = setup();
     const first = deferred<Session>();
