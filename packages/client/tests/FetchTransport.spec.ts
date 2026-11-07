@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FetchTransport } from "../src/FetchTransport";
+import { AppsScriptRpcError } from "../src/AppsScriptRpcError";
 
 describe("FetchTransport", () => {
   afterEach(() => {
@@ -116,6 +117,28 @@ describe("FetchTransport", () => {
     const error = await new FetchTransport({ endpoint: "/rpc" }).call("fail").catch((cause) => cause);
     expect(error).toMatchObject({ code: "INTERNAL_ERROR", message: "An unexpected error occurred" });
     expect(String(error.stack)).not.toContain("internal secret");
+  });
+
+  it.each([
+    new Error("internal secret"),
+    new TypeError("internal secret"),
+    new DOMException("internal secret", "AbortError"),
+  ])("normalizes successful response body read failures: %s", async (cause) => {
+    const text = vi.fn().mockRejectedValue(cause);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text }));
+
+    const error = await new FetchTransport({ endpoint: "/rpc" })
+      .call("sum", [1, 2])
+      .catch((error: unknown) => error);
+
+    expect(text).toHaveBeenCalledOnce();
+    expect(error).toBeInstanceOf(AppsScriptRpcError);
+    expect(error).toMatchObject({
+      code: "INTERNAL_ERROR",
+      message: "An unexpected error occurred",
+    });
+    expect(String((error as Error).stack)).not.toContain("internal secret");
+    expect(error).not.toHaveProperty("cause");
   });
 
   it("normalizes network failures", async () => {

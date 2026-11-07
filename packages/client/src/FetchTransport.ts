@@ -38,9 +38,13 @@ export class FetchTransport implements Transport {
     }
 
     if (response.ok) {
-      return {
-        contents: await response.text(),
-      };
+      try {
+        return {
+          contents: await response.text(),
+        };
+      } catch {
+        throw restoreRpcError(undefined);
+      }
     }
 
     let body: unknown;
