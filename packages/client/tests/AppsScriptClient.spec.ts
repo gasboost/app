@@ -127,10 +127,10 @@ describe("AppsScriptTransport", () => {
 
     failureHandler(new Error("failed"));
 
-    return expect(promise).rejects.toThrow("failed");
+    return expect(promise).rejects.toThrow("An unexpected error occurred");
   });
 
-  it("failure handlerのErrorをrejectする", async () => {
+  it("failure handlerの未知のErrorを安全なコード付きエラーにする", async () => {
     const transport = new AppsScriptTransport();
 
     const promise = transport.call("fail");
@@ -139,7 +139,7 @@ describe("AppsScriptTransport", () => {
 
     failureHandler(error);
 
-    await expect(promise).rejects.toBe(error);
+    await expect(promise).rejects.toMatchObject({ code: "INTERNAL_ERROR", message: "An unexpected error occurred" });
   });
 
   it("指定したTransportをRPCに利用する", async () => {
@@ -244,7 +244,7 @@ describe("appsScriptClient", () => {
     expect(result.createdAt).not.toBeInstanceOf(Date);
   });
 
-  it("GAS側の失敗をそのままrejectする", async () => {
+  it("GAS側の未知の失敗を安全なコード付きエラーにする", async () => {
     const { client } = appsScriptClient<TestApp>();
 
     const promise = client.fail();
@@ -255,7 +255,7 @@ describe("appsScriptClient", () => {
 
     failureHandler(error);
 
-    await expect(promise).rejects.toBe(error);
+    await expect(promise).rejects.toMatchObject({ code: "INTERNAL_ERROR", message: "An unexpected error occurred" });
   });
 
   it("不正なJSONならJSON.parseエラーになる", async () => {
@@ -310,7 +310,7 @@ describe("appsScriptClient", () => {
 
     failureHandler(new Error("failed"));
 
-    await expect(promise).rejects.toThrow("failed");
+    await expect(promise).rejects.toThrow("An unexpected error occurred");
 
     await vi.waitFor(() => {
       expect(jobs.getSnapshot()).toHaveLength(1);
@@ -443,4 +443,21 @@ it("sends metadata-only typed RPCs with a serializable null input", async () => 
   expect(serverFunctions.ping).toHaveBeenCalledWith(null, metadata);
   successHandler({ contents: "true" });
   await expect(promise).resolves.toBe(true);
+});
+
+it.each(["", "Error: ", "Exception: "])("restores message-only GAS failures with prefix %s", async (prefix) => {
+  serverFunctions = {};
+  const { client } = appsScriptClient<TestApp>();
+  const promise = client.fail();
+  failureHandler(new Error(prefix + 'GASBOOST_RPC_ERROR_V1:{"code":"EMPLOYEE_ALREADY_EXISTS","message":"Employee already exists"}'));
+  await expect(promise).rejects.toMatchObject({
+    code: "EMPLOYEE_ALREADY_EXISTS", message: "Employee already exists",
+  });
+});
+
+it.each(["GASBOOST_RPC_ERROR_V1:invalid", "internal secret", 'GASBOOST_RPC_ERROR_V1:{"code":1,"message":"internal secret"}'])("normalizes unsupported GAS failures: %s", async (message) => {
+  serverFunctions = {};
+  const promise = new AppsScriptTransport().call("fail");
+  failureHandler(new Error(message));
+  await expect(promise).rejects.toMatchObject({ code: "INTERNAL_ERROR", message: "An unexpected error occurred" });
 });

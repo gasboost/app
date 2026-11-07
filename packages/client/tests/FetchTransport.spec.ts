@@ -94,107 +94,36 @@ describe("FetchTransport", () => {
     expect(fetchMock).toHaveBeenCalledWith("/rpc/sum", expect.any(Object));
   });
 
-  it("RPC errorのnameとmessageを復元する", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          error: {
-            name: "InvalidRpcRequestError",
-            message: "Invalid RPC request body.",
-          },
-        }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
-      ),
-    );
-
-    vi.stubGlobal("fetch", fetchMock);
-
-    const transport = new FetchTransport({ endpoint: "/__gasboost" });
-
-    const promise = transport.call("sum", [1, 2]);
-
-    await expect(promise).rejects.toMatchObject({
-      name: "InvalidRpcRequestError",
-      message: "Invalid RPC request body.",
-    });
+  it.each([
+    { error: { code: "EMPLOYEE_ALREADY_EXISTS", message: "Employee already exists", stack: "internal secret" } },
+    { error: { name: "Error", message: 'GASBOOST_RPC_ERROR_V1:{"code":"EMPLOYEE_ALREADY_EXISTS","message":"Employee already exists"}' } },
+  ])("restores coded HTTP and existing Vite errors without a server stack", async (body) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(body), { status: 500 })));
+    const error = await new FetchTransport({ endpoint: "/rpc" }).call("fail").catch((cause) => cause);
+    expect(error).toMatchObject({ code: "EMPLOYEE_ALREADY_EXISTS", message: "Employee already exists" });
+    expect(error.stack).not.toContain("internal secret");
   });
 
-  it("RPC errorのstackを復元する", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          error: {
-            name: "Error",
-            message: "failed",
-            stack: "Error: failed\n    at example",
-          },
-        }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
-      ),
-    );
-
-    vi.stubGlobal("fetch", fetchMock);
-
-    const transport = new FetchTransport({ endpoint: "/__gasboost" });
-
-    const promise = transport.call("fail", []);
-
-    await expect(promise).rejects.toMatchObject({
-      name: "Error",
-      message: "failed",
-      stack: "Error: failed\n    at example",
-    });
+  it.each([
+    "Internal Server Error",
+    JSON.stringify({ unexpected: true }),
+    JSON.stringify({ error: { name: "Error", message: "internal secret", stack: "internal secret" } }),
+    JSON.stringify({ error: { code: 123, message: "internal secret" } }),
+    JSON.stringify({ error: { message: "GASBOOST_RPC_ERROR_V1:invalid" } }),
+    JSON.stringify({ error: { message: 'GASBOOST_RPC_ERROR_V1:{"message":"internal secret"}' } }),
+  ])("uses a safe fallback for uncoded or malformed failures: %s", async (body) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 500 })));
+    const error = await new FetchTransport({ endpoint: "/rpc" }).call("fail").catch((cause) => cause);
+    expect(error).toMatchObject({ code: "INTERNAL_ERROR", message: "An unexpected error occurred" });
+    expect(String(error.stack)).not.toContain("internal secret");
   });
 
-  it("error responseがJSONでない場合はHTTP statusを使う", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response("Internal Server Error", {
-        status: 500,
-      }),
-    );
-
-    vi.stubGlobal("fetch", fetchMock);
-
-    const transport = new FetchTransport({ endpoint: "/__gasboost" });
-
-    await expect(transport.call("fail", [])).rejects.toThrow(
-      "RPC request failed with status 500",
-    );
+  it("normalizes network failures", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("internal secret")));
+    await expect(new FetchTransport({ endpoint: "/rpc" }).call("fail"))
+      .rejects.toMatchObject({ code: "INTERNAL_ERROR", message: "An unexpected error occurred" });
   });
 
-  it("error responseの形式が不正な場合はHTTP statusを使う", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          unexpected: true,
-        }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
-      ),
-    );
-
-    vi.stubGlobal("fetch", fetchMock);
-
-    const transport = new FetchTransport({ endpoint: "/__gasboost" });
-
-    await expect(transport.call("fail", [])).rejects.toThrow(
-      "RPC request failed with status 500",
-    );
-  });
 });
 
 it("FetchTransport serializes input and metadata separately, including metadata-only calls", async () => {

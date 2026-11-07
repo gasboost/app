@@ -1,17 +1,10 @@
+import { restoreRpcError } from "./AppsScriptRpcError";
 import type { RpcMetadata } from "./RpcMetadata";
 import type { RpcResponse, Transport } from "./Transport";
 
 export interface FetchTransportOptions {
   endpoint: string;
 }
-
-type RpcErrorResponse = {
-  error: {
-    name: string;
-    message: string;
-    stack?: string;
-  };
-};
 
 export class FetchTransport implements Transport {
   public readonly endpoint: string;
@@ -25,19 +18,24 @@ export class FetchTransport implements Transport {
     input?: unknown,
     metadata?: RpcMetadata,
   ): Promise<RpcResponse> {
-    const response = await fetch(
-      `${this.endpoint}/${encodeURIComponent(name)}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+    let response: Response;
+    try {
+      response = await fetch(
+        `${this.endpoint}/${encodeURIComponent(name)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...(input === undefined ? {} : { input }),
+            ...(metadata === undefined ? {} : { metadata }),
+          }),
         },
-        body: JSON.stringify({
-          ...(input === undefined ? {} : { input }),
-          ...(metadata === undefined ? {} : { metadata }),
-        }),
-      },
-    );
+      );
+    } catch {
+      throw restoreRpcError(undefined);
+    }
 
     if (response.ok) {
       return {
@@ -45,29 +43,17 @@ export class FetchTransport implements Transport {
       };
     }
 
-    let body: RpcErrorResponse | undefined;
-
+    let body: unknown;
     try {
-      body = (await response.json()) as RpcErrorResponse;
+      body = await response.json();
     } catch {
-      throw new Error(`RPC request failed with status ${response.status}`);
+      throw restoreRpcError(undefined);
     }
-
-    if (
-      typeof body?.error?.name !== "string" ||
-      typeof body.error.message !== "string"
-    ) {
-      throw new Error(`RPC request failed with status ${response.status}`);
-    }
-
-    const error = new Error(body.error.message);
-
-    error.name = body.error.name;
-
-    if (body.error.stack) {
-      error.stack = body.error.stack;
-    }
-
-    throw error;
+    throw restoreRpcError(
+      typeof body === "object" && body !== null && "error" in body
+        ? body.error
+        : undefined,
+      true,
+    );
   }
 }

@@ -173,7 +173,7 @@ describe("AppsScript middleware", () => {
       .call("test", (_input: {}) => "ok");
 
     await expect(app.dispatch("test", {})).rejects.toThrow(
-      "next() called multiple times.",
+      "An unexpected error occurred",
     );
   });
 

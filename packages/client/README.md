@@ -548,3 +548,28 @@ iframe History
 ## License
 
 MIT
+
+### Coded RPC errors (0.6.0+)
+
+組み込みの `AppsScriptTransport` / `FetchTransport` は、RPC失敗時に
+公開型 `AppsScriptRpcError` をthrowします。任意のアプリ固有コードを判定できます。
+
+```ts
+import { AppsScriptRpcError } from "@gasboost/client";
+
+try {
+  await client.createEmployee({ name: "Taro" });
+} catch (error) {
+  if (error instanceof AppsScriptRpcError && error.code === "EMPLOYEE_ALREADY_EXISTS") {
+    // アプリ側で表示・復旧処理を選びます。
+  }
+}
+```
+
+App 5.5.0以降で明示したエラーは `code` と公開用 `message` を復元します。
+GASはmessage内のバージョン付きwire形式、Fetchは同形式を運ぶ従来のViteレスポンスと
+`{ error: { code: string, message: string } }` を受け付けます。
+サーバースタックは復元しません。未知・不正な形式、コードなしの旧サーバーエラー、
+ネットワーク失敗は `INTERNAL_ERROR` / `An unexpected error occurred` になります。
+従来のname/message/stackのそのままの復元からの動作変更です。
+AppとClientを一緒に更新してください。成功結果・型推論・カスタムTransportの契約は従来通りです。

@@ -1,3 +1,4 @@
+import { serializeRpcError } from "./AppsScriptError";
 import type { RpcMetadata } from "./RpcMetadata";
 import { AppsScriptContext } from "./AppsScriptContext";
 import { AppsScriptHttpRequest } from "./AppsScriptHttpRequest";
@@ -281,26 +282,30 @@ export class AppsScript<
   }
 
   public async dispatch(name: string, input?: unknown, metadata?: RpcMetadata) {
-    const handler = this.functions[name];
+    try {
+      const handler = this.functions[name];
 
-    if (!handler) {
-      throw new Error(`Function ${name} is not registered.`);
+      if (!handler) {
+        throw new Error(`Function ${name} is not registered.`);
+      }
+
+      const middlewares = this.functionMiddlewares[name] ?? [];
+
+      const result = await this.execute(
+        {
+          type: "call",
+          name,
+          input,
+          ...(metadata === undefined ? {} : { metadata }),
+        },
+        (context) => handler(input, context),
+        middlewares,
+      );
+
+      return new AppsScriptResponse(result);
+    } catch (cause) {
+      throw serializeRpcError(cause);
     }
-
-    const middlewares = this.functionMiddlewares[name] ?? [];
-
-    const result = await this.execute(
-      {
-        type: "call",
-        name,
-        input,
-        ...(metadata === undefined ? {} : { metadata }),
-      },
-      (context) => handler(input, context),
-      middlewares,
-    );
-
-    return new AppsScriptResponse(result);
   }
 
   public use(

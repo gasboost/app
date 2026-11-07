@@ -716,3 +716,53 @@ await app.dispatch("createEmployee", { name: "Taro" }, {
 登録された GAS global wrapper も `(input?, metadata?)` の別引数を受け取ります。metadata は call invocation ごとに保持され、`InferAppsScript` の input 型には含まれません。app 自体は metadata の内容を解釈せず、認証・token・session の schema を定義しません。既存の metadata 未指定の呼び出しは維持されます。
 
 metadata だけを付ける no-input RPC では、`AppsScriptTransport` は GAS の引数制約に合わせて `google.script.run[name](null, metadata)` を送ります（[Google の引数仕様](https://developers.google.com/apps-script/guides/html/reference/run#myfunction...)）。GAS global wrapper・`dispatch`・middleware の `invocation.input`・handler が受け取る値は `null` です。明示的な `null` 入力を維持するため、サーバー側では `undefined` に正規化しません。metadata も input も未指定なら従来通り0引数で送り、サーバーの input は `undefined` です。直接 `dispatch(name, undefined, metadata)` を呼ぶ場合も `undefined` を保持します。
+
+### RPC errors (5.5.0+)
+
+RPCから公開してよい失敗には `AppsScriptError({ code, message })` を使います。
+`code` は任意の文字列です。`message` もクライアントに返すため、秘密情報を含めないでください。
+Domain / Application例外はPresentation middlewareで変換できます。保護対象のRPCより前に登録します。
+
+```ts
+import { AppsScript, AppsScriptError, type AppsScriptMiddleware } from "@gasboost/app";
+
+const errors: AppsScriptMiddleware = async (_context, next) => {
+  try {
+    return await next();
+  } catch (cause) {
+    if (cause instanceof EmployeeAlreadyExistsError) {
+      throw new AppsScriptError({
+        code: "EMPLOYEE_ALREADY_EXISTS",
+        message: "Employee already exists",
+      });
+    }
+    throw cause;
+  }
+};
+const app = new AppsScript().use(errors).calls(employeeHandlers);
+```
+
+`EmployeeAlreadyExistsError` と `employeeHandlers` はConsumer側で定義します。
+通常のError・非Error throw・結果のJSON変換失敗は、RPC公開境界で
+`{ code: "INTERNAL_ERROR", message: "An unexpected error occurred" }` に変換します。
+元のメッセージ、スタック、追加プロパティは送信しません。GET / POSTは従来通りです。
+Auth / Bootstrap固有コードの分類は、それぞれのライブラリまたはConsumerが担当します。
+
+GASが独自Errorのプロパティを保持することに依存せず、`dispatch()` は失敗時に
+`GASBOOST_RPC_ERROR_V1:` + JSON形式のmessageを持つErrorをthrowします。
+JSONのフィールドは `code` と `message` のみで、Errorのstackは未設定です。
+成功時は従来の `AppsScriptResponse.contents` のままです。
+`@gasboost/client` 0.6.0以降は、GAS failure handlerとFetchの双方でこの形式を復元します。
+
+既存の `@gasboost/vite` Local RPCエンドポイントが生成する
+`{ error: { name, message, stack } }` も、新しいmessageをそのまま運べます。
+このRPC wire形式の伝搬にVite側の追従変更は不要です。将来のエンドポイントは
+`{ error: { code, message } }` を返してもClientが復元できます。
+`dispatch()` より前のentry import等で発生するVite自身の例外は、既存のHTTPレスポンス形式を通ります。
+Clientでは安全なフォールバックになりますが、そのHTTP payload自体の秘匿化は
+`gasboost/dev` 側での別対応が必要です。
+アップグレード時はAppとClientを一緒に更新してください。コードなしの旧サーバーエラーは
+新Clientで安全な `INTERNAL_ERROR` になります。
+
+配布パッケージと既存Vite形式・GASのmessageのみのfailure semanticsは
+`pnpm smoke:rpc` で検証できます。
