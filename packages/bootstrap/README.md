@@ -7,7 +7,7 @@ HTML・テンプレート変数・タイトル・UIはConsumerが生成します
 ## インストール
 
 ```sh
-pnpm add @gasboost/app@^5.4.0 @gasboost/bootstrap@^0.2.0 @gasboost/client@^0.5.0
+pnpm add @gasboost/app@^5.5.0 @gasboost/bootstrap@^0.3.0 @gasboost/client@^0.6.0
 pnpm add @gasboost/auth@^0.9.0 @gasboost/auth-sheetorm@^0.4.1 @gasboost/auth-app@^0.6.2
 ```
 
@@ -215,7 +215,7 @@ User欠落やAccountとUserの矛盾はエラーにし、User行を自動作成�
 CIは `integration/package.json` の公開済みレジストリ版をインストールし、
 実Auth型とのConsumer型チェックと結合テストを実行します。未マージソースのcheckoutは行いません。
 Auth 0.9.0 / Auth SheetORM 0.4.1の公開版で検証します。
-App 5.4.0を先に公開し、その後Bootstrap 0.2.0を公開します。
+App 5.5.0 / Client 0.6.0を先に公開し、その後Bootstrap 0.3.0を公開します。
 
 ```sh
 npm --prefix packages/bootstrap/integration install --ignore-scripts --no-audit --package-lock=false
@@ -226,4 +226,48 @@ pnpm --filter @gasboost/bootstrap test:integration
 `pnpm typecheck` / `pnpm test` / `pnpm build` で型と単体を検証します。
 結合テストではBootstrapとSheetDBで同じNodeLockServiceを共有し、認証3パターンと
 不正主体の拒否、登録後・Account追加後・進捗保存時の中断を通じて、1 User / 必要Account / 1 Roleを確認します。
-App / Bootstrapをpackした後は `pnpm --filter @gasboost/bootstrap smoke` で配布Consumerを確認できます。
+App / Bootstrapをpackし、Clientをbuildした後は `pnpm --filter @gasboost/bootstrap smoke` で配布Consumerを確認できます。
+
+
+## 型付き初期化エラー（0.3.0以降）
+
+ブラウザでは `@gasboost/bootstrap/errors` を使います。このサブパスはGAS API・
+Bootstrapのサーバー実装・Auth実装をimportしません。
+`BOOTSTRAP_ERROR_CODES` は読み取り専用の定数、`BootstrapErrorCode` はその値のunion型です。
+
+```ts
+import { BOOTSTRAP_ERROR_CODES, type BootstrapErrorCode } from "@gasboost/bootstrap/errors";
+import { AppsScriptRpcError } from "@gasboost/client";
+
+try {
+  await client.initializeApp({ token });
+} catch (error) {
+  if (error instanceof AppsScriptRpcError && error.code === BOOTSTRAP_ERROR_CODES.INVALID_TOKEN) {
+    // Consumer側で表示や復旧処理を選択します。
+  }
+}
+```
+
+| code | 条件・対処 |
+| --- | --- |
+| `INVALID_TOKEN` | 無効なtoken、または初期化リンク未発行。通常の `/exec` から有効なメールリンクを取得します。 |
+| `TOKEN_EXPIRED` | tokenの期限切れ。通常の `/exec` で再発行します。 |
+| `LOCKED` | 試行回数上限。期限後に通常の `/exec` で再発行します。 |
+| `IN_PROGRESS` | 通知・初期化リースが有効。既存処理の完了またはリース期限まで待って再試行します。 |
+| `ALREADY_INITIALIZED` | 初期化済み。通常のアプリ画面へ進みます。 |
+| `LINK_NOT_READY` | リンク送信の完了記録がない。60秒後にtokenなしの `/exec` を開き再送します。 |
+
+`BootstrapError({ code, message })` は上記のコードだけを受け付けるErrorです。
+`message` も公開されるため、token・メールアドレス・内部状態を含めないでください。
+日本語の表示文言はConsumer / UI側でマッピングします。
+
+`handle(request)` の既知の検証失敗は同期の `BootstrapError` です。HTMLの戻り値や
+`BootstrapPublicState`、永続形式は変わりません。
+`handlers().initializeApp` は `BootstrapError` だけをAppの `AppsScriptError` に変換し、
+App / Clientの共通RPC規約で `code` と安全な `message` を伝搬します。
+RPCで受け取る型は `AppsScriptRpcError` であり、`BootstrapError` のinstanceではありません。
+内部不整合・DB障害・実行環境や認証設定の問題等は公開コードとして列挙せず、
+予期しない例外のまま共通RPC境界へ渡し、安全な `INTERNAL_ERROR` に正規化します。
+
+smokeではtarballを使うサーバーConsumerに加え、GAS型定義なしのブラウザConsumerの型検査と
+browser bundleを検証します。bundle入力がConsumerとerrorsモジュールだけであることも確認します。

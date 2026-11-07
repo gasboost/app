@@ -38,6 +38,9 @@ jobs:
       - name: Build app
         run: pnpm --filter @gasboost/app build
 
+      - name: Build client
+        run: pnpm --filter @gasboost/client build
+
       - name: Typecheck bootstrap
         run: pnpm --filter @gasboost/bootstrap typecheck
 
@@ -50,9 +53,6 @@ jobs:
       - name: Install published Auth integration dependencies
         working-directory: packages/bootstrap/integration
         run: npm install --ignore-scripts --no-audit --package-lock=false
-
-      - name: Build client
-        run: pnpm --filter @gasboost/client build
 
       - name: Integration test bootstrap with Auth and SheetORM
         run: |

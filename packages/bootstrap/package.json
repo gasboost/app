@@ -1,6 +1,6 @@
 {
   "name": "@gasboost/bootstrap",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "First-run initialization for Google Apps Script web applications.",
   "license": "MIT",
   "repository": {
@@ -20,10 +20,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "default": "./dist/errors.js"
     }
   },
   "dependencies": {
-    "@gasboost/app": "workspace:^"
+    "@gasboost/app": "workspace:^5.5.0"
   },
   "devDependencies": {
     "@types/google-apps-script": "^2.0.12",
