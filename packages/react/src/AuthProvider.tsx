@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -21,6 +22,7 @@ type Actions<TClient> = {
 export function createAuthContext<TClient extends Client>(auth: TClient) {
   type Value = ReturnType<TClient["getState"]> & Actions<TClient> & {
     isLoading: boolean;
+    isSessionRestoreFailed: boolean;
     error: unknown;
   };
   const Context = createContext<Value | null>(null);
@@ -32,20 +34,32 @@ export function createAuthContext<TClient extends Client>(auth: TClient) {
     });
     return restoration;
   };
-  const subscribe = (listener: () => void) => auth.subscribe(listener);
   const getSnapshot = () => auth.getState() as ReturnType<TClient["getState"]>;
 
   function AuthProvider({ children }: { children: ReactNode }) {
-    const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
     const [pending, setPending] = useState(0);
     const [isRestoring, setRestoring] = useState(true);
     const [error, setError] = useState<unknown>(null);
-    const run = useCallback(async (operation: () => Promise<unknown>) => {
+    const [isSessionRestoreFailed, setSessionRestoreFailed] = useState(false);
+    const revision = useRef(0);
+    const subscribe = useCallback((listener: () => void) => auth.subscribe(() => {
+      // AuthClient only publishes committed states. A superseded action can
+      // resolve without committing, so its Promise cannot clear a restore failure.
+      ++revision.current;
+      setSessionRestoreFailed(false);
+      listener();
+    }), []);
+    const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+    const run = useCallback(async (operation: () => Promise<unknown>, action: string) => {
+      const isRestore = action === "restoreSession";
+      const current = isRestore ? ++revision.current : revision.current;
       setPending((count) => count + 1);
       setError(null);
       try {
         return await operation();
       } catch (cause) {
+        // A superseded restore must not invalidate a newer authentication result.
+        if (isRestore && current === revision.current) setSessionRestoreFailed(true);
         setError(cause);
         throw cause;
       } finally {
@@ -70,14 +84,14 @@ export function createAuthContext<TClient extends Client>(auth: TClient) {
           )
           .map(([key, method]) => {
             const action = method as (...args: unknown[]) => Promise<unknown>;
-            return [key, (...args: unknown[]) => run(() => action.apply(auth, args))];
+            return [key, (...args: unknown[]) => run(() => action.apply(auth, args), key)];
           }),
       ) as Actions<TClient>;
     }, [run]);
 
     useEffect(() => {
       let active = true;
-      void run(restore)
+      void run(restore, "restoreSession")
         .catch(() => {
           // The error is exposed through context.
         })
@@ -90,8 +104,8 @@ export function createAuthContext<TClient extends Client>(auth: TClient) {
     }, [run]);
 
     const value = useMemo(
-      () => ({ ...snapshot, ...actions, isLoading: isRestoring || pending > 0, error }),
-      [snapshot, actions, isRestoring, pending, error],
+      () => ({ ...snapshot, ...actions, isLoading: isRestoring || pending > 0, isSessionRestoreFailed, error }),
+      [snapshot, actions, isRestoring, pending, isSessionRestoreFailed, error],
     );
     return <Context.Provider value={value}>{children}</Context.Provider>;
   }
