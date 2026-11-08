@@ -103,6 +103,18 @@ jobs:
         if: ${{ needs.check-versions.outputs.publish-app == 'true' || needs.check-versions.outputs.publish-bootstrap == 'true' }}
         run: pnpm --filter @gasboost/app build
 
+      - name: Typecheck client
+        if: ${{ needs.check-versions.outputs.publish-client == 'true' }}
+        run: pnpm --filter @gasboost/client typecheck
+
+      - name: Test client
+        if: ${{ needs.check-versions.outputs.publish-client == 'true' }}
+        run: pnpm --filter @gasboost/client test
+
+      - name: Build client
+        if: ${{ needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true' || needs.check-versions.outputs.publish-bridge == 'true' || needs.check-versions.outputs.publish-bootstrap == 'true' }}
+        run: pnpm --filter @gasboost/client build
+
       - name: Verify bootstrap Auth release
         if: ${{ needs.check-versions.outputs.publish-bootstrap == 'true' }}
         run: |
@@ -121,18 +133,6 @@ jobs:
       - name: Build bootstrap
         if: ${{ needs.check-versions.outputs.publish-bootstrap == 'true' }}
         run: pnpm --filter @gasboost/bootstrap build
-
-      - name: Typecheck client
-        if: ${{ needs.check-versions.outputs.publish-client == 'true' }}
-        run: pnpm --filter @gasboost/client typecheck
-
-      - name: Test client
-        if: ${{ needs.check-versions.outputs.publish-client == 'true' }}
-        run: pnpm --filter @gasboost/client test
-
-      - name: Build client
-        if: ${{ needs.check-versions.outputs.publish-client == 'true' || needs.check-versions.outputs.publish-react == 'true' || needs.check-versions.outputs.publish-bridge == 'true' }}
-        run: pnpm --filter @gasboost/client build
 
       - name: Typecheck bridge
         if: ${{ needs.check-versions.outputs.publish-bridge == 'true' }}
