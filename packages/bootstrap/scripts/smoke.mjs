@@ -106,7 +106,10 @@ if (typeof AppsScriptBootstrap !== "function") throw new Error("Bootstrap export
       include: ["index.ts"],
     }),
   );
-  for (const args of [["install"], ["exec", "tsc"]]) {
+  for (const args of [
+    ["install", "--no-frozen-lockfile"],
+    ["exec", "tsc"],
+  ]) {
     execFileSync("pnpm", args, { cwd: consumer, stdio: "inherit" });
   }
   execFileSync("node", ["index.js"], { cwd: consumer, stdio: "inherit" });
@@ -199,7 +202,11 @@ new BootstrapError({ code: "UNKNOWN_CODE", message: "invalid" });
     "@types/react-dom": "~19.2.7",
   });
   await writeFile(join(consumer, "package.json"), JSON.stringify(manifest));
-  execFileSync("pnpm", ["install"], { cwd: consumer, stdio: "inherit" });
+  // This generated consumer has just gained React dependencies; resolve its temporary lockfile even in CI.
+  execFileSync("pnpm", ["install", "--no-frozen-lockfile"], {
+    cwd: consumer,
+    stdio: "inherit",
+  });
   await writeFile(
     join(consumer, "react-browser.tsx"),
     `
