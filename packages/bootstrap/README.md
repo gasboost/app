@@ -7,7 +7,7 @@ HTML・テンプレート変数・タイトル・UIはConsumerが生成します
 ## インストール
 
 ```sh
-pnpm add @gasboost/app@^5.5.0 @gasboost/bootstrap@^0.3.0 @gasboost/client@^0.6.0
+pnpm add @gasboost/app@^5.5.0 @gasboost/bootstrap@^0.4.0 @gasboost/client@^0.6.0
 pnpm add @gasboost/auth@^0.9.0 @gasboost/auth-sheetorm@^0.4.1 @gasboost/auth-app@^0.6.2
 ```
 
@@ -121,6 +121,60 @@ RPCは公開入口として扱い、トークン・TTL・試行回数・未初�
 拒否時にDB migration・Auth登録・Role付与・Password Reset通知・hookは実行しません。
 不正トークンの試行回数更新はセキュリティ用のプロパティ更新として行います。
 
+## Reactの共有状態（0.4.0以降）
+
+Reactを使う場合は `@gasboost/bootstrap/react` の `BootstrapProvider` と
+`useBootstrap` を利用できます。React 19はoptional peerです。サーバー用の
+`@gasboost/bootstrap` と `@gasboost/bootstrap/errors` にはReactのインストールは不要です。
+ReactアプリではConsumer側で `react` / `react-dom` をインストールします。
+Router / QueryClientProviderには依存しません。
+
+ConsumerでHTMLに埋め込んだ状態を読み取り、初期値として渡します。
+`bootstrap-data` はConsumerがHTMLテンプレートで設定する要素IDです。
+
+```ts
+// Consumer: src/frontend/lib/bootstrap.ts
+import type { BootstrapPublicState } from "@gasboost/bootstrap";
+
+export const bootstrap = JSON.parse(
+  document.getElementById("bootstrap-data")!.textContent!,
+) as BootstrapPublicState;
+```
+
+```tsx
+// Consumer: React entrypoint
+import { createRoot } from "react-dom/client";
+import { BootstrapProvider } from "@gasboost/bootstrap/react";
+import { bootstrap } from "./lib/bootstrap";
+import { App } from "./App";
+
+createRoot(document.getElementById("root")!).render(
+  <BootstrapProvider initialState={bootstrap}>
+    <App />
+  </BootstrapProvider>,
+);
+```
+
+Provider配下では `useBootstrap()` から `{ initialized, setInitialized }` を取得します。
+Consumerの初期化RPCやMutationが成功したら、次のように更新します。
+
+```tsx
+const { initialized, setInitialized } = useBootstrap();
+
+// Consumerの成功コールバック内
+if (result.initialized) setInitialized(true);
+```
+
+更新は同じProvider配下のすべてのConsumerへ通知されます。
+`setInitialized` はbooleanを受け付け、`false` への更新も可能です。
+`initialState` はマウント時だけ使用し、親の再描画や同propの変更で共有状態をリセットしません。
+独立したProvider間で状態は共有せず、渡された初期値オブジェクトも変更しません。
+
+`initialState` の未指定・null・boolean以外の `initialized` は明示エラーです。
+Provider外の `useBootstrap()` も明示エラーになります。
+ProviderはDOMの状態読取、RPC、永続化、Guard、ルーティング、画面描画を行いません。
+これらとMutationのUIはConsumer / gasboost/uiが担当します。
+
 ## 実行ユーザーとGAS設定
 
 デプロイは `executeAs: USER_DEPLOYING`（自分として実行）を維持します。
@@ -215,7 +269,7 @@ User欠落やAccountとUserの矛盾はエラーにし、User行を自動作成�
 CIは `integration/package.json` の公開済みレジストリ版をインストールし、
 実Auth型とのConsumer型チェックと結合テストを実行します。未マージソースのcheckoutは行いません。
 Auth 0.9.0 / Auth SheetORM 0.4.1の公開版で検証します。
-App 5.5.0 / Client 0.6.0を先に公開し、その後Bootstrap 0.3.0を公開します。
+App 5.5.0 / Client 0.6.0を先に公開し、その後Bootstrap 0.4.0を公開します。
 
 ```sh
 npm --prefix packages/bootstrap/integration install --ignore-scripts --no-audit --package-lock=false
@@ -270,4 +324,5 @@ RPCで受け取る型は `AppsScriptRpcError` であり、`BootstrapError` のin
 予期しない例外のまま共通RPC境界へ渡し、安全な `INTERNAL_ERROR` に正規化します。
 
 smokeではtarballを使うサーバーConsumerに加え、GAS型定義なしのブラウザConsumerの型検査と
-browser bundleを検証します。bundle入力がConsumerとerrorsモジュールだけであることも確認します。
+browser bundleを検証します。errors bundleの入力がConsumerとerrorsモジュールだけであること、
+React未インストールでサーバー用とerrorsをimportできること、React bundleがサーバーやAuthを取り込まないことも確認します。

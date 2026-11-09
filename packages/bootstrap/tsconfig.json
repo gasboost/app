@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
-    "types": ["google-apps-script"]
+    "types": ["google-apps-script"],
+    "jsx": "react-jsx"
   },
   "include": ["src", "tests"]
 }

@@ -1,9 +1,6 @@
 import type { AppsScriptAuthRepository } from "@gasboost/auth";
 
-/** Safe to embed in HTML. Secrets and recovery data never appear here. */
-export type BootstrapPublicState = {
-  initialized: boolean;
-};
+export type { BootstrapPublicState } from "./BootstrapPublicState";
 
 export type BootstrapAccount = {
   userId: string;
