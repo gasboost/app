@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- `@gasboost/bootstrap/react` に `BootstrapProvider` / `useBootstrap` を追加。HTMLの公開状態を初期値にし、`setInitialized(boolean)` の変更を配下のConsumerへ通知します。
+- 初期値の未指定・不正形式、Provider外のHook呼び出しを明示エラーにします。
+- React 19をoptional peerに追加。サーバー用・errorsサブパスはReactなしで利用可能です。React用サブパスの実行時・型定義からGAS / Authへの依存を分離し、既存の公開状態の形式・サーバーAPIは維持します。
+
 ## 0.3.0
 
 - ブラウザ専用の `@gasboost/bootstrap/errors` に `BOOTSTRAP_ERROR_CODES`・`BootstrapErrorCode`・`BootstrapError({ code, message })` を公開。GAS / サーバー / Auth実装には依存しません。

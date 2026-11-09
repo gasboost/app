@@ -1,6 +1,6 @@
 {
   "name": "@gasboost/bootstrap",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "First-run initialization for Google Apps Script web applications.",
   "license": "MIT",
   "repository": {
@@ -24,6 +24,10 @@
     "./errors": {
       "types": "./dist/errors.d.ts",
       "default": "./dist/errors.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
     }
   },
   "dependencies": {
@@ -32,7 +36,13 @@
   "devDependencies": {
     "@types/google-apps-script": "^2.0.12",
     "@gasboost/client": "workspace:*",
-    "@gasboost/auth": "0.9.0"
+    "@gasboost/auth": "0.9.0",
+    "react": "^19",
+    "react-dom": "^19",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "~19.2.7",
+    "@testing-library/react": "^16.3.3",
+    "jsdom": "^30.0.1"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -45,6 +55,12 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@gasboost/auth": "^0.9.0"
+    "@gasboost/auth": "^0.9.0",
+    "react": "^19"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
   }
 }
