@@ -2,13 +2,13 @@ import type { AppsScriptAuthRepository } from "@gasboost/auth";
 
 export type { BootstrapPublicState } from "./BootstrapPublicState";
 
+/** Server-internal account shape read from the repository. */
 export type BootstrapAccount = {
   userId: string;
   identity: { providerName: string; accountId: string };
 };
 export type BootstrapUser = {
   id: string;
-  accounts: readonly BootstrapAccount[];
 };
 
 /** Public server management APIs. */
@@ -31,7 +31,7 @@ export interface BootstrapAuth {
       input:
         | { provider: "appsScript"; email: string }
         | { provider: "emailPassword"; email: string; password: string },
-    ): Promise<BootstrapAccount>;
+    ): Promise<unknown>;
   };
   password?: { forgot(input: { email: string }): Promise<void> };
 }

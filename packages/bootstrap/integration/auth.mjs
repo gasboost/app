@@ -79,12 +79,14 @@ class Gateway {
   }
 }
 
-for (const [emailPassword, appsScript] of [
+for (const [emailPassword, appsScript, interrupted] of [
   [true, false],
   [false, true],
   [true, true],
-]) {
-  test(`real Auth/SheetORM: email=${emailPassword}, GAS=${appsScript}`, async () => {
+].flatMap(([emailPassword, appsScript]) =>
+  [false, true].map((interrupted) => [emailPassword, appsScript, interrupted]),
+)) {
+  test(`real Auth/SheetORM: email=${emailPassword}, GAS=${appsScript}, interrupted=${interrupted}`, async () => {
     const authTables = createAuthTables();
     const roleTables = createAuthorizationTables();
     const utilities = new NodeUtilities();
@@ -136,7 +138,7 @@ for (const [emailPassword, appsScript] of [
       lockService,
     });
     let raw = null;
-    let failRegistrationCheckpoint = true;
+    let failRegistrationCheckpoint = interrupted;
     const propertiesService = {
       getScriptProperties: () => ({
         getProperty: () => {
@@ -197,7 +199,7 @@ for (const [emailPassword, appsScript] of [
             async send(message) {
               await assertExclusive("notify");
               messages.push(message);
-              if (messages.length === 1)
+              if (interrupted && messages.length === 1)
                 throw new Error("notification interrupted");
             },
           },
@@ -250,7 +252,8 @@ for (const [emailPassword, appsScript] of [
     let registrationCalls = 0;
     const interruptRegistration = (user) => {
       registrationCalls++;
-      throw new Error("registration write interrupted");
+      if (interrupted) throw new Error("registration write interrupted");
+      return user;
     };
     const register = auth.registration.appsScript.bind(auth.registration);
     auth.registration.appsScript = async (input) => {
@@ -267,7 +270,7 @@ for (const [emailPassword, appsScript] of [
     auth.account.add = async (...args) => {
       const account = await addAccount(...args);
       accountCalls++;
-      if (accountCalls === 1) throw new Error("account write interrupted");
+      if (interrupted && accountCalls === 1) throw new Error("account write interrupted");
       return account;
     };
     const assign = authorization.role.assign.bind(authorization.role);
@@ -325,32 +328,35 @@ for (const [emailPassword, appsScript] of [
       assert.deepEqual(observedStages, []);
     }
     activeEmail = "admin@example.com";
-    await assert.rejects(
-      client.initializeApp(input),
-      internalRpcError,
-    );
-    const registeredId = db.table("user").find()[0].id;
-    assert.equal(JSON.parse(raw).progress.administrator.id, undefined);
-    assert.equal(db.table("user").find().length, 1);
-    assert.ok(registeredId);
-    if (emailPassword && appsScript) {
+    let registeredId;
+    if (interrupted) {
       await assert.rejects(
         client.initializeApp(input),
         internalRpcError,
       );
-    }
-    await assert.rejects(
-      client.initializeApp(input),
-      internalRpcError,
-    );
-    assert.equal(registrationCalls, 1);
-    assert.equal(accountCalls, emailPassword && appsScript ? 1 : 0);
-    if (emailPassword) {
+      registeredId = db.table("user").find()[0].id;
+      assert.equal(JSON.parse(raw).progress.administrator.id, undefined);
+      assert.equal(db.table("user").find().length, 1);
+      assert.ok(registeredId);
+      if (emailPassword && appsScript) {
+        await assert.rejects(
+          client.initializeApp(input),
+          internalRpcError,
+        );
+      }
       await assert.rejects(
         client.initializeApp(input),
         internalRpcError,
       );
-      assert.equal(JSON.parse(raw).initialized, false);
+      assert.equal(registrationCalls, 1);
+      assert.equal(accountCalls, emailPassword && appsScript ? 1 : 0);
+      if (emailPassword) {
+        await assert.rejects(
+          client.initializeApp(input),
+          internalRpcError,
+        );
+        assert.equal(JSON.parse(raw).initialized, false);
+      }
     }
     await client.initializeApp(input);
     assert.deepEqual(JSON.parse(raw), { initialized: true });
@@ -364,7 +370,9 @@ for (const [emailPassword, appsScript] of [
     gateway.onWrite = () => {};
     const users = db.table("user").find();
     assert.equal(users.length, 1);
-    assert.equal(users[0].id, registeredId);
+    if (interrupted) assert.equal(users[0].id, registeredId);
+    assert.equal(registrationCalls, 1);
+    assert.equal(accountCalls, emailPassword && appsScript ? 1 : 0);
     assert.equal(
       db.table("account").find().length,
       emailPassword && appsScript ? 2 : 1,
@@ -375,16 +383,18 @@ for (const [emailPassword, appsScript] of [
       true,
     );
     if (emailPassword) {
-      assert.equal(messages.length, 2);
-      assert.notEqual(messages[0].token, messages[1].token);
-      await assert.rejects(
-        auth.password.reset({
-          token: messages[0].token,
-          newPassword: "old-token-rejected",
-        }),
-      );
+      assert.equal(messages.length, interrupted ? 2 : 1);
+      if (interrupted) {
+        assert.notEqual(messages[0].token, messages[1].token);
+        await assert.rejects(
+          auth.password.reset({
+            token: messages[0].token,
+            newPassword: "old-token-rejected",
+          }),
+        );
+      }
       await auth.password.reset({
-        token: messages[1].token,
+        token: messages.at(-1).token,
         newPassword: "administrator-chosen-password",
       });
       const signedIn = await auth.signIn.email({

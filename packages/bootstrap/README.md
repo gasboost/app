@@ -7,14 +7,18 @@ HTML・テンプレート変数・タイトル・UIはConsumerが生成します
 ## インストール
 
 ```sh
-pnpm add @gasboost/app@^5.5.0 @gasboost/bootstrap@^0.4.0 @gasboost/client@^0.6.0
-pnpm add @gasboost/auth@^0.9.0 @gasboost/auth-sheetorm@^0.4.1 @gasboost/auth-app@^0.6.2
+pnpm add @gasboost/app@^5.5.0 @gasboost/bootstrap@^0.5.0 @gasboost/client@^0.6.0
+pnpm add @gasboost/auth@^0.12.0 @gasboost/auth-sheetorm@^0.5.1 @gasboost/auth-app@^0.9.0
 ```
 
-標準登録と復旧には公開済みAuth 0.9.0のRegistration / Account APIとRepository APIを使用します。
+標準登録と復旧には公開済みAuth 0.12.0のRegistration / Account APIとRepository APIを使用します。
 Auth / DB / Password Resetは非同期の正規APIを使用します。
 `authRepository` はAuthが公開する `AppsScriptAuthRepository` 型をそのまま使用します。
 AuthやClientをruntime importしません。
+
+0.4.xからの移行時はAuthを `^0.12.0`、Auth SheetORMを対応版 `^0.5.1` に更新してください。
+`handle()` / `handlers().initializeApp` / `BootstrapOptions` の呼び方や公開状態は変わりません。
+`authRepository` は引き続きAuthと同じインスタンスを渡し、DTOへIdentityや認証情報を追加する必要はありません。
 Clientは既存APIを使用するためversion bumpはありません。
 
 ## Backend
@@ -251,10 +255,11 @@ ActiveUser / EffectiveUserの非空・一致を確認した後にだけ、次を
    存在すれば `authRepository.user.find(account.userId)` で前回のUserを復元し、Identityとの整合性を検査。
    なければ `auth.registration.appsScript({ name, email })`、または
    `auth.registration.email({ name, email, password })` で最初のAccountとUserを新規登録。
-   User IDはAuthが内部採番します。
+   User IDはAuthが内部採番します。戻り値のDTOからはIDのみを使用し、RepositoryでAccountを読み直して所有者・provider・メールを検査します。
 3. 両方式が有効なら `authRepository.account.findByIdentity("emailPassword", email)` を検索。
    同じUserなら追加を省略し、別Userならエラー。未登録なら
    `auth.account.add(user.id, { provider: "emailPassword", email, password })` で追加。
+   追加APIの戻り値には依存せず、Repositoryで読み直したAccountを同様に検査します。
 4. User IDと登録完了を同じ進捗保存で記録し、`authorization.role.assign()`、
    Email有効時の `auth.password.forgot()`、完了hook、完了状態保存。
 
@@ -268,8 +273,8 @@ User欠落やAccountとUserの矛盾はエラーにし、User行を自動作成�
 
 CIは `integration/package.json` の公開済みレジストリ版をインストールし、
 実Auth型とのConsumer型チェックと結合テストを実行します。未マージソースのcheckoutは行いません。
-Auth 0.9.0 / Auth SheetORM 0.4.1の公開版で検証します。
-App 5.5.0 / Client 0.6.0を先に公開し、その後Bootstrap 0.4.0を公開します。
+Auth 0.12.0 / Auth SheetORM 0.5.1の公開版で検証します。
+App 5.5.0 / Client 0.6.0を先に公開し、Auth 0.12.0 / Auth SheetORM 0.5.1の公開後にBootstrap 0.5.0を公開します。
 
 ```sh
 npm --prefix packages/bootstrap/integration install --ignore-scripts --no-audit --package-lock=false
