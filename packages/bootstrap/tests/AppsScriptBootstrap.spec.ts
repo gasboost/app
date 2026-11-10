@@ -95,7 +95,7 @@ function fixture(overrides: Partial<BootstrapOptions> = {}) {
       accounts.push(account);
       const user = new User({ id, name: input.name, accounts: [account] });
       users.set(id, user);
-      return user;
+      return { id: user.id };
     });
   const auth = {
     registration: {
@@ -108,7 +108,7 @@ function fixture(overrides: Partial<BootstrapOptions> = {}) {
         async (id: string, input: { provider: string; email: string }) => {
           const account = makeAccount(id, input.provider, input.email);
           accounts.push(account);
-          return account;
+          return { id: account.id, userId: account.userId };
         },
       ),
     },
@@ -846,7 +846,7 @@ it.each([
   "foreign-second",
   "wrong-user",
   "wrong-identity",
-  "missing-user-account",
+  "missing-primary-account",
 ])("checks persisted registration consistency: %s", async (partial) => {
   const f = fixture();
   f.get();
@@ -886,10 +886,10 @@ it.each([
         },
       }),
     );
-  if (partial === "missing-user-account")
-    f.authRepository.user.find.mockResolvedValueOnce(
-      new User({ id: "stable", name: "Admin", accounts: [] }),
-    );
+  if (partial === "missing-primary-account")
+    f.authRepository.account.findByIdentity
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(null);
   if (partial === "existing") {
     await f.initialize();
     expect(f.users.size).toBe(1);
@@ -907,6 +907,69 @@ it.each([
   }
   expect(f.auth.registration.appsScript).not.toHaveBeenCalled();
   expect(f.auth.registration.email).not.toHaveBeenCalled();
+});
+
+describe("verifies repository accounts after DTO service results", () => {
+  it.each([
+    [true, false],
+    [false, true],
+    [true, true],
+  ])("accepts ID-only registration: email=%s, GAS=%s", async (emailPassword, appsScript) => {
+    const f = fixture();
+    f.auth.registration.methods = { emailPassword, appsScript };
+    f.get();
+    await expect(f.initialize()).resolves.toEqual({ initialized: true });
+    expect(f.users.size).toBe(1);
+    expect(f.accounts).toHaveLength(emailPassword && appsScript ? 2 : 1);
+    expect(f.authorization.role.assign).toHaveBeenCalledExactlyOnceWith(
+      [...f.users.keys()][0],
+      "管理者",
+    );
+  });
+
+  it.each(["registration", "addition"] as const)(
+    "rejects missing or inconsistent persisted accounts after %s",
+    async (stage) => {
+      for (const fault of ["missing", "owner", "provider", "email"] as const) {
+        const f = fixture();
+        f.get();
+        const find =
+          f.authRepository.account.findByIdentity.getMockImplementation()!;
+        let calls = 0;
+        f.authRepository.account.findByIdentity.mockImplementation(
+          async (provider, email) => {
+            const account = await find(provider, email);
+            if (++calls !== (stage === "registration" ? 2 : 4)) return account;
+            if (fault === "missing") return null;
+            return new Account({
+              ...account!,
+              userId: fault === "owner" ? "other-user" : account!.userId,
+              identity: {
+                providerName:
+                  fault === "provider"
+                    ? provider === "appsScript" ? "emailPassword" : "appsScript"
+                    : account!.identity.providerName,
+                accountId:
+                  fault === "email" ? "other@example.com" : account!.identity.accountId,
+              },
+            });
+          },
+        );
+        await expect(f.initialize()).rejects.toThrow(
+          fault === "owner" ? "Account belongs to another user" : "inconsistent",
+        );
+        expect(f.state().progress?.registered).toBeUndefined();
+        expect(f.authorization.role.assign).not.toHaveBeenCalled();
+        expect(f.auth.password.forgot).not.toHaveBeenCalled();
+        // A subsequent consistent read recovers the existing writes without new credentials.
+        await f.initialize();
+        expect(f.auth.registration.appsScript).toHaveBeenCalledOnce();
+        expect(f.auth.account.add).toHaveBeenCalledOnce();
+        expect(f.users.size).toBe(1);
+        expect(f.accounts).toHaveLength(2);
+      }
+    },
+  );
 });
 
 it("does not add a second Account twice after an interrupted Account write", async () => {

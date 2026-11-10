@@ -313,10 +313,9 @@ export class AppsScriptBootstrap {
     }
     if (!user.id || (administrator.id && administrator.id !== user.id))
       throw new Error("Registered user ID is inconsistent");
-    const primaryAccount = user.accounts.find(
-      (entry) =>
-        entry.identity.providerName === primary &&
-        entry.identity.accountId === email,
+    const primaryAccount = await authRepository.account.findByIdentity(
+      primary,
+      email,
     );
     if (!primaryAccount) throw new Error("Registered account is inconsistent");
     check(primaryAccount, primary, user.id);
@@ -327,11 +326,16 @@ export class AppsScriptBootstrap {
       );
       if (second) check(second, "emailPassword", user.id);
       else {
-        const added = await auth.account.add(user.id, {
+        await auth.account.add(user.id, {
           provider: "emailPassword",
           email,
           password: password(),
         });
+        const added = await authRepository.account.findByIdentity(
+          "emailPassword",
+          email,
+        );
+        if (!added) throw new Error("Added account is inconsistent");
         check(added, "emailPassword", user.id);
       }
     }

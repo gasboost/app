@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- Auth 0.12.0の公開DTOに対応。登録APIの戻り値はUser IDだけ使用し、Account追加APIの戻り値には依存しません。
+- 登録・Account追加の成功後に同じRepositoryからAccountを読み直し、所有者・provider・メールの整合性を検証。中断後の再試行では既存User・Accountを再利用します。
+- Authのpeer依存を `^0.12.0` に変更。0.4.xからはAuthと対応するAuth SheetORM（0.5.1以降）を更新してください。Bootstrapの呼び方・公開状態・リース・通知仕様は維持します。
+
 ## 0.4.0
 
 - `@gasboost/bootstrap/react` に `BootstrapProvider` / `useBootstrap` を追加。HTMLの公開状態を初期値にし、`setInitialized(boolean)` の変更を配下のConsumerへ通知します。

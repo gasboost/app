@@ -34,8 +34,8 @@ importers:
         version: link:../app
     devDependencies:
       '@gasboost/auth':
-        specifier: 0.9.0
-        version: 0.9.0
+        specifier: 0.12.0
+        version: 0.12.0
       '@gasboost/client':
         specifier: workspace:*
         version: link:../client
@@ -97,7 +97,7 @@ importers:
     devDependencies:
       '@testing-library/react':
         specifier: ^16.3.3
-        version: 16.3.3(@testing-library/dom@10.4.1)(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@types/react':
         specifier: ^19.2.18
         version: 19.2.18
@@ -337,8 +337,8 @@ packages:
       '@gasboost/client':
         optional: true
 
-  '@gasboost/auth@0.9.0':
-    resolution: {integrity: sha512-6u3AK+46qYEXUc9kYfC+ZJN5BWL4lbfdnABO/cmaDImKaHy54kgf1yHeoJzjErqdQzZs0Hn5V7++eYyYZq+aHQ==}
+  '@gasboost/auth@0.12.0':
+    resolution: {integrity: sha512-dKzL+LQJbpwkS5vBKT8LbtajwUBWf5x/p34mrhuB7IB3cHhuaBI890LjLz+I8bAGH8p7LQDz74biwqd04yODrw==}
 
   '@gasboost/table@0.1.0':
     resolution: {integrity: sha512-eJ0QNsbYSB/MB+XGLw5jiTVqL6I26+9HiZ6Uj4TmU9tGHQfiJl21EWgUgDr1HHtjxYKrVA3V12ShRWnni82/6A==}
@@ -1185,7 +1185,7 @@ snapshots:
     optionalDependencies:
       '@gasboost/client': link:packages/client
 
-  '@gasboost/auth@0.9.0':
+  '@gasboost/auth@0.12.0':
     dependencies:
       '@gasboost/table': 0.1.0(zod@4.6.7)
       zod: 4.6.7
@@ -1272,15 +1272,6 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.18
       '@types/react-dom': 19.2.7(@types/react@19.2.18)
-
-  '@testing-library/react@16.3.3(@testing-library/dom@10.4.1)(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
-    dependencies:
-      '@babel/runtime': 7.29.7
-      '@testing-library/dom': 10.4.1
-      react: 19.2.8
-      react-dom: 19.2.8(react@19.2.8)
-    optionalDependencies:
-      '@types/react': 19.2.18
 
   '@types/aria-query@5.0.4': {}
 

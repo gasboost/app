@@ -34,7 +34,7 @@ try {
         "@gasboost/app": `file:${join(root, app)}`,
         "@gasboost/bootstrap": `file:${join(root, bootstrap)}`,
         "@gasboost/client": client,
-        "@gasboost/auth": "0.9.0",
+        "@gasboost/auth": "0.12.0",
       },
       devDependencies: {
         typescript: "^7.0.2",
@@ -55,7 +55,7 @@ try {
 import { AppsScript, type InferAppsScript } from "@gasboost/app";
 import { AppsScriptBootstrap, type BootstrapPublicState } from "@gasboost/bootstrap";
 import { appsScriptClient } from "@gasboost/client";
-import type { AppsScriptAuthRepository } from "@gasboost/auth";
+import type { AppsScriptAuth, AppsScriptAuthRepository } from "@gasboost/auth";
 
 const authRepository: AppsScriptAuthRepository = {
   user: { async find(_id) { return null; }, async create(user) { return user; } },
@@ -68,15 +68,24 @@ const bootstrap = new AppsScriptBootstrap({
   auth: {
     registration: {
       methods: { emailPassword: false, appsScript: true },
-      async appsScript(input) { return { id: "generated", accounts: [] }; },
-      async email(input) { return { id: "generated", accounts: [] }; },
+      async appsScript(input) { return { id: "generated" }; },
+      async email(input) { return { id: "generated" }; },
     },
     account: {
-      async add(userId, input) { return { userId, identity: { providerName: input.provider, accountId: input.email } }; },
+      async add(userId, input) { return { id: "generated-account", userId }; },
     },
   },
   authorization: { role: { async assign(_id: string, _role: "管理者") {} } },
 });
+// Compile the actual published Auth DTO contract against the packed declarations.
+function withPublishedAuth(auth: AppsScriptAuth) {
+  return new AppsScriptBootstrap({
+    auth, authRepository,
+    db: { migrate() {} },
+    authorization: { role: { async assign(_id: string, _role: string) {} } },
+  });
+}
+void withPublishedAuth;
 const app = new AppsScript().get(request => {
   const state: BootstrapPublicState = bootstrap.handle(request);
   void state;
@@ -295,6 +304,7 @@ if (false) {
   );
   assert.equal(packed.version, bootstrapVersion);
   assert.equal(packed.dependencies["@gasboost/app"], "^5.5.0");
+  assert.equal(packed.peerDependencies["@gasboost/auth"], "^0.12.0");
   assert.equal(packed.peerDependencies.react, "^19");
   assert.equal(packed.peerDependenciesMeta.react.optional, true);
   console.log(
