@@ -65,7 +65,7 @@ export function appsScriptClient<TApp extends RpcApp>({
           if (typeof property !== "string") return undefined;
           if (!methods.has(property)) {
             methods.set(property, (input?: unknown, options?: RpcCallOptions) =>
-              jobQueue.enqueue(property, async () => {
+              jobQueue.enqueue(options?.label ?? property, async () => {
                 // Resolve for every execution, including queued jobs and retries.
                 const metadata = resolveMetadata(providers, options?.metadata);
                 const response =

@@ -141,6 +141,11 @@ describe("RPC metadata pipeline", () => {
     if (false) {
       client.ping();
       client.ping(undefined, { metadata: { trace: "id" } });
+      client.business({ name: "Taro" }, { label: "登録" });
+      client.ping(undefined, { label: "同期処理" });
+      client.ping(undefined, { label: "同期処理", metadata: { trace: "id" } });
+      // @ts-expect-error Label is a string
+      client.ping(undefined, { label: 123 });
       // @ts-expect-error Metadata isn't part of business input
       client.business({ name: "Taro", metadata: {} });
       // @ts-expect-error Missing business input
