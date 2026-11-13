@@ -76,15 +76,19 @@ const { client } = appsScriptClient<AppType>({
 });
 
 await client.sum({ a: 1, b: 2 });
-await client.sum({ a: 1, b: 2 }, {
-  metadata: { "@my-app/tracing": { traceId: "explicit-trace" } },
-});
+await client.sum(
+  { a: 1, b: 2 },
+  {
+    metadata: { "@my-app/tracing": { traceId: "explicit-trace" } },
+  },
+);
 
 // input が undefined の RPC も従来通り0引数で呼べます。
 // metadata を渡す場合は input の位置を空けます。
-await client.ping(undefined, { metadata: { "@my-app/tracing": { traceId: "ping" } } });
+await client.ping(undefined, {
+  metadata: { "@my-app/tracing": { traceId: "ping" } },
+});
 ```
-
 
 metadata だけを付ける no-input RPC では、`AppsScriptTransport` は GAS の引数制約に合わせて `google.script.run[name](null, metadata)` を送ります（[Google の引数仕様](https://developers.google.com/apps-script/guides/html/reference/run#myfunction...)）。GAS global wrapper・`dispatch`・middleware の `invocation.input`・handler が受け取る値は `null` です。明示的な `null` 入力を維持するため、サーバー側では `undefined` に正規化しません。metadata も input も未指定なら従来通り0引数で送り、サーバーの input は `undefined` です。直接 `dispatch(name, undefined, metadata)` を呼ぶ場合も `undefined` を保持します。
 
@@ -149,7 +153,11 @@ const { client } = appsScriptClient<AppType>({
 
 ```ts
 interface Transport {
-  call(name: string, input?: unknown, metadata?: RpcMetadata): Promise<RpcResponse>;
+  call(
+    name: string,
+    input?: unknown,
+    metadata?: RpcMetadata,
+  ): Promise<RpcResponse>;
 }
 ```
 
@@ -159,7 +167,11 @@ interface Transport {
 import type { RpcMetadata, RpcResponse, Transport } from "@gasboost/client";
 
 class CustomTransport implements Transport {
-  public async call(name: string, input?: unknown, metadata?: RpcMetadata): Promise<RpcResponse> {
+  public async call(
+    name: string,
+    input?: unknown,
+    metadata?: RpcMetadata,
+  ): Promise<RpcResponse> {
     // 任意の RPC transport
   }
 }
@@ -375,11 +387,25 @@ const promise = client.getUser("user-1");
 const snapshot = jobs.getSnapshot();
 ```
 
-RPC 名が Job の `label` になります。
+デフォルトでは RPC 名が Job の `label` になります。
 
 ```ts
 job.label === "getUser";
 ```
+
+第2引数の `label` で表示名を指定できます。
+
+```ts
+const promise = client.getUser("user-1", {
+  label: "ユーザー情報の取得",
+  metadata: { requestId: "example" },
+});
+
+jobs.getSnapshot()[0].label === "ユーザー情報の取得";
+```
+
+`metadata` は省略可能です。引数なし RPC では `client.someRpc(undefined, { label: "同期処理" })` のように指定します。
+ラベルはローカルの Job 表示にのみ使用され、サーバーへの RPC メソッド名・input・metadata には含まれません。`jobs.retry(id)` でも指定したラベルを維持します。
 
 Job には一意な `id` が割り当てられます。
 
@@ -560,7 +586,10 @@ import { AppsScriptRpcError } from "@gasboost/client";
 try {
   await client.createEmployee({ name: "Taro" });
 } catch (error) {
-  if (error instanceof AppsScriptRpcError && error.code === "EMPLOYEE_ALREADY_EXISTS") {
+  if (
+    error instanceof AppsScriptRpcError &&
+    error.code === "EMPLOYEE_ALREADY_EXISTS"
+  ) {
     // アプリ側で表示・復旧処理を選びます。
   }
 }

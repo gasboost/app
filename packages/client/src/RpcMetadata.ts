@@ -3,6 +3,8 @@ export type MetadataProvider = () => RpcMetadata | undefined;
 
 export interface RpcCallOptions {
   metadata?: RpcMetadata;
+  /** Local Job display name. Defaults to the RPC method name. */
+  label?: string;
 }
 
 /** Shallow merge in provider order; per-call namespaces take precedence. */
