@@ -86,6 +86,9 @@ jobs:
       - name: Build react
         run: pnpm --filter @gasboost/react build
 
+      - name: Smoke test React with published client
+        run: pnpm --filter @gasboost/react smoke
+
       - name: Smoke test coded RPC packages
         run: pnpm smoke:rpc
 

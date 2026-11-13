@@ -1,6 +1,6 @@
 {
   "name": "@gasboost/react",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "React integration for Google Apps Script web applications.",
   "repository": {
     "type": "git",
@@ -19,7 +19,8 @@
   ],
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -32,7 +33,7 @@
   },
   "dependencies": {
     "@gasboost/auth-client": "^0.2.0",
-    "@gasboost/client": "workspace:*"
+    "@gasboost/client": "workspace:0.7.0"
   },
   "peerDependencies": {
     "react": "^19"
@@ -44,6 +45,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --config vitest.config.mts",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json"
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "smoke": "node scripts/smoke.mjs"
   }
 }
