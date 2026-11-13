@@ -86,8 +86,8 @@ importers:
   packages/react:
     dependencies:
       '@gasboost/auth-client':
-        specifier: ^0.2.0
-        version: 0.2.0(@gasboost/client@packages+client)
+        specifier: ^0.8.1
+        version: 0.8.1(@gasboost/client@packages+client)
       '@gasboost/client':
         specifier: workspace:0.7.0
         version: link:../client
@@ -329,10 +329,10 @@ packages:
       '@noble/hashes':
         optional: true
 
-  '@gasboost/auth-client@0.2.0':
-    resolution: {integrity: sha512-0NVkO/j1i6rHRgETRZl1+IFjTrZAQOurB+7UUrLaXiaAo+c/O+RtXmy4TCYleDbgw0u9sl9U95gfR7Xi1DpJvg==}
+  '@gasboost/auth-client@0.8.1':
+    resolution: {integrity: sha512-s9HKkUXGs31aQawOL8eY25ZJjyDQ0N+dO4JLzUmqGJ5cMB9jcEOy/QrynViPL5+SLoORbmLWS0G9VV5JGq9ItA==}
     peerDependencies:
-      '@gasboost/client': ^0.5.0
+      '@gasboost/client': ^0.5.0 || ^0.6.0 || ^0.7.0
     peerDependenciesMeta:
       '@gasboost/client':
         optional: true
@@ -1181,7 +1181,7 @@ snapshots:
 
   '@exodus/bytes@1.15.1': {}
 
-  '@gasboost/auth-client@0.2.0(@gasboost/client@packages+client)':
+  '@gasboost/auth-client@0.8.1(@gasboost/client@packages+client)':
     optionalDependencies:
       '@gasboost/client': link:packages/client
 

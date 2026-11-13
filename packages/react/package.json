@@ -1,6 +1,6 @@
 {
   "name": "@gasboost/react",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "React integration for Google Apps Script web applications.",
   "repository": {
     "type": "git",
@@ -32,7 +32,7 @@
     }
   },
   "dependencies": {
-    "@gasboost/auth-client": "^0.2.0",
+    "@gasboost/auth-client": "^0.8.1",
     "@gasboost/client": "workspace:0.7.0"
   },
   "peerDependencies": {

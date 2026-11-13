@@ -31,6 +31,7 @@ try {
     }),
   );
   assert.equal(packedManifest.dependencies["@gasboost/client"], "0.7.0");
+  assert.equal(packedManifest.dependencies["@gasboost/auth-client"], "^0.8.1");
   const declaration = execFileSync(
     "tar",
     ["-xOf", archive, "package/dist/useAppsScriptJob.d.ts"],
@@ -45,6 +46,7 @@ try {
       private: true,
       dependencies: {
         "@gasboost/client": "0.7.0",
+        "@gasboost/auth-client": "0.8.1",
         "@gasboost/react": `file:${archive}`,
         react: "^19",
       },
@@ -54,13 +56,17 @@ try {
     }),
   );
   execFileSync(
-    "npm",
+    "pnpm",
+    ["install", "--lockfile-only", "--strict-peer-dependencies"],
+    { cwd: consumer, stdio: "inherit" },
+  );
+  execFileSync(
+    "pnpm",
     [
       "install",
+      "--frozen-lockfile",
+      "--strict-peer-dependencies",
       "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      "--package-lock=false",
     ],
     { cwd: consumer, stdio: "inherit" },
   );
@@ -111,7 +117,7 @@ export function ServerJobList() {
     stdio: "inherit",
   });
   console.log(
-    "Packed React smoke passed with published client 0.7.0: shared types, hook argument and Job results.",
+    "Packed React smoke passed with published client 0.7.0 and auth-client 0.8.1: fresh strict peer resolution, shared types, hook argument and Job results.",
   );
 } finally {
   await rm(consumer, { recursive: true, force: true });
